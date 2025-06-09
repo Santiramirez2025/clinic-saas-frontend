@@ -518,7 +518,7 @@ const ModernLogin = ({ store }) => {
 
     try {
       console.log('🧪 Demo login attempt');
-      await store.login('sofia@example.com', 'password123');
+      await store.login('test@example.com', 'password123');
     } catch (error) {
       console.error('Demo login error:', error.message);
     }
