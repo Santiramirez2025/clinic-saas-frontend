@@ -308,7 +308,7 @@ const DemoCredentials = ({ onDemoLogin, isLoading }) => {
         <div className="space-y-2 mb-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-blue-700 font-medium">Email:</span>
-            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded text-xs">test@example.com</span>
+            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded text-xs">sofia@example.com</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-blue-700 font-medium">Contraseña:</span>
