@@ -1,5 +1,5 @@
-// components/ModernLogin.jsx - OPTIMIZADO PARA BACKEND
-import React, { useState, useEffect } from 'react';
+// components/ModernLogin.jsx - SIN LOGS REPETITIVOS
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Eye, 
   EyeOff, 
@@ -108,8 +108,11 @@ const ModernHeader = ({ clinicName, isLogin }) => {
   );
 };
 
-// 🎨 COMPONENTE 3: Indicador de conexión al backend
+// 🎨 COMPONENTE 3: Indicador de conexión SIMPLIFICADO
 const BackendConnectionIndicator = ({ isConnected, isLoading }) => {
+  // Solo mostrar si hay problemas de conexión
+  if (isConnected === true) return null;
+  
   if (isLoading) {
     return (
       <div className="fixed top-4 right-4 bg-yellow-100 border border-yellow-300 rounded-lg px-3 py-2 flex items-center space-x-2 z-50">
@@ -119,24 +122,16 @@ const BackendConnectionIndicator = ({ isConnected, isLoading }) => {
     );
   }
 
-  return (
-    <div className={`fixed top-4 right-4 rounded-lg px-3 py-2 flex items-center space-x-2 z-50 transition-all duration-300 ${
-      isConnected 
-        ? 'bg-green-100 border border-green-300' 
-        : 'bg-red-100 border border-red-300'
-    }`}>
-      {isConnected ? (
-        <Wifi size={16} className="text-green-600" />
-      ) : (
+  if (isConnected === false) {
+    return (
+      <div className="fixed top-4 right-4 bg-red-100 border border-red-300 rounded-lg px-3 py-2 flex items-center space-x-2 z-50">
         <WifiOff size={16} className="text-red-600" />
-      )}
-      <span className={`text-sm font-medium ${
-        isConnected ? 'text-green-800' : 'text-red-800'
-      }`}>
-        {isConnected ? 'Conectado' : 'Sin conexión'}
-      </span>
-    </div>
-  );
+        <span className="text-red-800 text-sm font-medium">Sin conexión</span>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 // 🎨 COMPONENTE 4: Toggle moderno para Login/Registro
@@ -334,7 +329,11 @@ const DemoCredentials = ({ onDemoLogin, isLoading }) => {
   );
 };
 
-// 🎨 COMPONENTE PRINCIPAL: Login moderno
+// ✅ GLOBAL FLAG para evitar múltiples tests de conexión
+let connectionTestDone = false;
+let connectionTestPromise = null;
+
+// 🎨 COMPONENTE PRINCIPAL: Login moderno SIN LOGS REPETITIVOS
 const ModernLogin = ({ store }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
@@ -346,26 +345,78 @@ const ModernLogin = ({ store }) => {
   const [validationErrors, setValidationErrors] = useState({});
   const [backendConnected, setBackendConnected] = useState(null);
   const [testingConnection, setTestingConnection] = useState(false);
+  
+  // ✅ Referencias para evitar múltiples ejecuciones
+  const mountedRef = useRef(false);
+  const connectionTestedRef = useRef(false);
 
-  // ✅ Test backend connection on mount
+  // ✅ Test backend connection SOLO UNA VEZ
   useEffect(() => {
+    mountedRef.current = true;
+    
+    // Evitar múltiples tests
+    if (connectionTestedRef.current || connectionTestDone) {
+      console.log('🚫 Connection already tested, skipping...');
+      setBackendConnected(true); // Asumimos que está conectado
+      return;
+    }
+    
     const testConnection = async () => {
-      setTestingConnection(true);
-      try {
-        const result = await store.testBackendConnection();
-        setBackendConnected(result);
-      } catch (error) {
-        console.error('Connection test failed:', error);
-        setBackendConnected(false);
-      } finally {
-        setTestingConnection(false);
+      if (connectionTestPromise) {
+        console.log('⏳ Connection test in progress, waiting...');
+        return await connectionTestPromise;
       }
+      
+      connectionTestPromise = (async () => {
+        setTestingConnection(true);
+        connectionTestedRef.current = true;
+        connectionTestDone = true;
+        
+        try {
+          console.log('🧪 Testing backend connection (one time only)...');
+          
+          // Test directo sin usar store para evitar logs repetitivos
+          const healthUrl = 'https://clinic-backend-z0d0.onrender.com/health';
+          const response = await fetch(healthUrl);
+          const data = await response.json();
+          
+          const isConnected = response.ok && data.status === 'OK';
+          
+          if (mountedRef.current) {
+            setBackendConnected(isConnected);
+            if (isConnected) {
+              console.log('✅ Backend connected successfully');
+            } else {
+              console.warn('❌ Backend health check failed');
+            }
+          }
+          
+          return isConnected;
+        } catch (error) {
+          console.error('❌ Connection test failed:', error.message);
+          if (mountedRef.current) {
+            setBackendConnected(false);
+          }
+          return false;
+        } finally {
+          if (mountedRef.current) {
+            setTestingConnection(false);
+          }
+          connectionTestPromise = null;
+        }
+      })();
+      
+      return await connectionTestPromise;
     };
 
-    // Test connection after 1 second
-    const timer = setTimeout(testConnection, 1000);
-    return () => clearTimeout(timer);
-  }, [store]);
+    // Test después de 500ms para evitar race conditions
+    const timer = setTimeout(testConnection, 500);
+    
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+    };
+  }, []); // ✅ Solo al montar
 
   // Form validation MEJORADA
   const validateForm = () => {
@@ -414,10 +465,10 @@ const ModernLogin = ({ store }) => {
 
     try {
       if (isLogin) {
-        console.log('🔐 Attempting login with:', formData.email);
+        console.log('🔐 Login attempt:', formData.email);
         await store.login(formData.email, formData.password);
       } else {
-        console.log('📝 Attempting registration with:', formData.email);
+        console.log('📝 Registration attempt:', formData.email);
         await store.register({
           name: formData.name.trim(),
           email: formData.email.trim(),
@@ -426,7 +477,7 @@ const ModernLogin = ({ store }) => {
         });
       }
     } catch (error) {
-      console.error('Auth error:', error);
+      console.error('Auth error:', error.message);
       // El error ya se maneja en el store
     }
   };
@@ -469,7 +520,7 @@ const ModernLogin = ({ store }) => {
       console.log('🧪 Demo login attempt');
       await store.login('test@example.com', 'password123');
     } catch (error) {
-      console.error('Demo login error:', error);
+      console.error('Demo login error:', error.message);
     }
   };
 
@@ -478,7 +529,7 @@ const ModernLogin = ({ store }) => {
       {/* Fondo animado */}
       <AnimatedBackground />
 
-      {/* Indicador de conexión */}
+      {/* Indicador de conexión (solo si hay problemas) */}
       <BackendConnectionIndicator 
         isConnected={backendConnected} 
         isLoading={testingConnection} 
