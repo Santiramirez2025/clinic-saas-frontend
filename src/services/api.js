@@ -1,4 +1,4 @@
-// services/api.js - ACTUALIZADO para backend en Render
+// services/api.js - CORREGIDO para manejar 401 correctamente
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://clinic-backend-z0d0.onrender.com/api'
   : 'http://localhost:3000/api';
@@ -44,8 +44,14 @@ class ApiService {
       
       if (!response.ok) {
         if (response.status === 401) {
-          this.clearTokens();
-          throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+          // Solo limpiar tokens si NO es un endpoint de login/register
+          if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+            this.clearTokens();
+            throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+          }
+          // Para login/register, usar el mensaje del backend
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Credenciales inválidas');
         }
         
         const errorData = await response.json().catch(() => ({}));
@@ -59,7 +65,7 @@ class ApiService {
     }
   }
 
-  // Auth methods - CORREGIDOS
+  // Auth methods
   async login(email, password) {
     const response = await this.request('/auth/login', {
       method: 'POST',
@@ -101,7 +107,7 @@ class ApiService {
     console.log('🚪 API Service logout');
   }
 
-  // User methods - CORREGIDOS
+  // User methods
   async getCurrentUser() {
     const response = await this.request('/auth/profile');
     return response;
@@ -115,7 +121,7 @@ class ApiService {
     return response;
   }
 
-  // Appointment methods - CORREGIDOS
+  // Appointment methods
   async getUserAppointments(filters = {}) {
     const queryParams = new URLSearchParams();
     if (filters.status) queryParams.append('status', filters.status);
@@ -169,7 +175,7 @@ class ApiService {
     return response;
   }
 
-  // VIP methods - CORREGIDOS
+  // VIP methods
   async getVipStatus() {
     const response = await this.request('/vip/status');
     return response;
