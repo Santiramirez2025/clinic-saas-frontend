@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import useAppStore from '../../store/useAppStore';
 
 // Components
-import ModernHeader from './ModernHeader';
-import NextAppointmentCard from './NextAppointmentCard';
+import ModernHeader from './Modernheader';
+import NextAppointmentCard from './NextAppointmentcard';
 import QuickActionsGrid from './QuickActionsGrid';
 import StatsAndAchievements from './StatsAndAchievements';
 import BookingModal from './BookingModal';

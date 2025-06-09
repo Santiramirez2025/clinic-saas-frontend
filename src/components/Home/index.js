@@ -1,7 +1,7 @@
 // Archivo principal de exportación de componentes
 export { default as HomeView } from './HomeView';
-export { default as ModernHeader } from './ModernHeader';
-export { default as NextAppointmentCard } from './NextAppointmentCard';
+export { default as ModernHeader } from './Modernheader';
+export { default as NextAppointmentCard } from './NextAppointmentcard';
 export { default as QuickActionsGrid } from './QuickActionsGrid';
 export { default as StatsAndAchievements } from './StatsAndAchievements';
 export { default as BookingModal } from './BookingModal';
