@@ -1,4 +1,4 @@
-// store/useAppStore.js - CORREGIDO Y OPTIMIZADO PARA STRICTMODE
+// store/useAppStore.js - ACTUALIZADO PARA BACKEND EN RENDER
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ApiService from '../services/api.js';
 
@@ -6,7 +6,7 @@ import ApiService from '../services/api.js';
 const createRateLimiter = () => {
   const requests = new Map();
   const WINDOW_MS = 60000; // 1 minuto
-  const MAX_REQUESTS = 25; // Más conservador
+  const MAX_REQUESTS = 20; // Más conservador para Render
 
   return {
     canMakeRequest: (key) => {
@@ -51,75 +51,15 @@ const useAppStore = () => {
   const [state, setState] = useState({
     user: null,
     appointments: [],
+    services: [], // ✅ Ahora del backend
     vipStatus: null,
+    notifications: [],
+    tips: [],
     isAuthenticated: false,
     isLoading: false,
     isInitializing: false,
     error: null,
     successMessage: null,
-    // ✅ Servicios hardcodeados
-    services: [
-      {
-        id: 1,
-        name: 'Limpieza Facial',
-        duration: 60,
-        price: 8500,
-        description: 'Limpieza profunda con extracción de comedones y mascarilla hidratante',
-        icon: '🧴',
-        category: 'Facial',
-        popular: true
-      },
-      {
-        id: 2,
-        name: 'Botox',
-        duration: 30,
-        price: 25000,
-        description: 'Tratamiento antiedad con toxina botulínica para reducir arrugas',
-        icon: '💉',
-        category: 'Antienvejecimiento',
-        popular: true
-      },
-      {
-        id: 3,
-        name: 'Relleno de Labios',
-        duration: 45,
-        price: 18000,
-        description: 'Aumento y definición labial con ácido hialurónico',
-        icon: '💋',
-        category: 'Estética',
-        popular: false
-      },
-      {
-        id: 4,
-        name: 'Peeling Químico',
-        duration: 90,
-        price: 12000,
-        description: 'Renovación celular profunda para mejorar textura y luminosidad',
-        icon: '✨',
-        category: 'Tratamiento',
-        popular: false
-      },
-      {
-        id: 5,
-        name: 'Microdermoabrasión',
-        duration: 75,
-        price: 9500,
-        description: 'Exfoliación mecánica para eliminar células muertas y imperfecciones',
-        icon: '🔄',
-        category: 'Exfoliación',
-        popular: false
-      },
-      {
-        id: 6,
-        name: 'Radiofrecuencia',
-        duration: 60,
-        price: 15000,
-        description: 'Tratamiento tensor y reafirmante con tecnología de radiofrecuencia',
-        icon: '⚡',
-        category: 'Tensor',
-        popular: true
-      }
-    ],
     clinic: {
       name: 'Clínica Estética Premium',
       primaryColor: '#6366f1',
@@ -142,6 +82,8 @@ const useAppStore = () => {
   const dataCache = useRef({
     appointments: null,
     vipStatus: null,
+    services: null,
+    notifications: null,
     lastUpdate: 0,
     ttl: 30000 // 30 segundos
   });
@@ -156,6 +98,7 @@ const useAppStore = () => {
   }, []);
 
   const setError = useCallback((error) => {
+    console.error('❌ Store Error:', error);
     setState(prev => ({ 
       ...prev, 
       error: error?.message || error || null,
@@ -179,14 +122,29 @@ const useAppStore = () => {
     setState(prev => ({ ...prev, successMessage: null }));
   }, []);
 
-  // ✅ getPendingAppointments - función que faltaba
-  const getPendingAppointments = useCallback(() => {
-    return state.appointments.filter(apt => 
-      apt.status === 'PENDING' || apt.status === 'REQUESTED'
-    ).sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [state.appointments]);
+  // ✅ Test backend connection
+  const testBackendConnection = useCallback(async () => {
+    try {
+      console.log('🧪 Testing backend connection...');
+      const result = await api.testConnection();
+      
+      if (result.success) {
+        console.log('✅ Backend connected successfully');
+        setSuccess('Backend conectado correctamente');
+      } else {
+        console.warn('⚠️ Backend connection issues:', result.message);
+        setError(`Backend: ${result.message}`);
+      }
+      
+      return result.success;
+    } catch (error) {
+      console.error('❌ Backend connection test failed:', error);
+      setError('No se puede conectar al servidor');
+      return false;
+    }
+  }, [setSuccess, setError]);
 
-  // ✅ FUNCIÓN CRÍTICA: loadUserData CON PROTECCIONES STRICTMODE
+  // ✅ FUNCIÓN CRÍTICA: loadUserData CON BACKEND
   const loadUserData = useCallback(async (userId, forceLoad = false) => {
     if (!userId) {
       console.warn('❌ No userId provided to loadUserData');
@@ -236,7 +194,9 @@ const useAppStore = () => {
         setState(prev => ({
           ...prev,
           appointments: dataCache.current.appointments || [],
-          vipStatus: dataCache.current.vipStatus || null
+          vipStatus: dataCache.current.vipStatus || null,
+          services: dataCache.current.services || [],
+          notifications: dataCache.current.notifications || []
         }));
         return;
       }
@@ -253,53 +213,78 @@ const useAppStore = () => {
         
         try {
           setLoading(true);
-          console.log('📊 Loading user data for:', userId);
+          console.log('📊 Loading user data from backend...');
           
           const startUserId = userId;
           let appointments = [];
           let vipStatus = null;
+          let services = [];
+          let notifications = [];
           
-          // ✅ SECUENCIAL 1: Cargar appointments con retry
+          // ✅ 1. Cargar appointments
           console.log('🔄 Loading appointments...');
           try {
-            const appointmentsResponse = await api.getUserAppointments(userId);
+            const appointmentsResponse = await api.getUserAppointments();
             if (appointmentsResponse?.success) {
               appointments = appointmentsResponse.data?.appointments || [];
               console.log(`✅ Loaded ${appointments.length} appointments`);
             }
           } catch (error) {
-            console.warn('⚠️ Failed to load appointments (non-critical):', error.message);
-            if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-              console.log('⏱️ Rate limited on appointments, waiting longer...');
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+            console.warn('⚠️ Failed to load appointments:', error.message);
           }
 
-          // ✅ DELAY obligatorio entre llamadas
-          console.log('⏱️ Waiting 2 seconds before VIP call...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // ✅ DELAY entre llamadas
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
-          // ✅ Verificar si el usuario cambió durante la carga
+          // ✅ Verificar si el usuario cambió
           if (currentUserIdRef.current !== startUserId || !mountedRef.current) {
-            console.log('🚫 User changed or component unmounted during load, discarding results');
+            console.log('🚫 User changed during load, discarding results');
             return;
           }
 
-          // ✅ SECUENCIAL 2: Cargar VIP status
+          // ✅ 2. Cargar VIP status
           console.log('🔄 Loading VIP status...');
           try {
-            const vipResponse = await api.getVipStatus(userId);
+            const vipResponse = await api.getVipStatus();
             if (vipResponse?.success) {
               vipStatus = vipResponse.data;
               console.log('✅ VIP status loaded');
             }
           } catch (error) {
-            console.warn('⚠️ Failed to load VIP status (non-critical):', error.message);
+            console.warn('⚠️ Failed to load VIP status:', error.message);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // ✅ 3. Cargar services
+          console.log('🔄 Loading services...');
+          try {
+            const servicesResponse = await api.getServices();
+            if (servicesResponse?.success) {
+              services = servicesResponse.data?.services || [];
+              console.log(`✅ Loaded ${services.length} services`);
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to load services:', error.message);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // ✅ 4. Cargar notifications
+          console.log('🔄 Loading notifications...');
+          try {
+            const notificationsResponse = await api.getNotifications();
+            if (notificationsResponse?.success) {
+              notifications = notificationsResponse.data?.notifications || [];
+              console.log(`✅ Loaded ${notifications.length} notifications`);
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to load notifications:', error.message);
           }
 
           // ✅ Verificar nuevamente si el usuario cambió
           if (currentUserIdRef.current !== startUserId || !mountedRef.current) {
-            console.log('🚫 User changed or component unmounted during load, discarding results');
+            console.log('🚫 User changed during load, discarding results');
             return;
           }
 
@@ -307,29 +292,30 @@ const useAppStore = () => {
           dataCache.current = {
             appointments,
             vipStatus,
+            services,
+            notifications,
             lastUpdate: Date.now(),
             ttl: 30000
           };
 
-          // ✅ Actualizar state atómicamente solo si está montado
+          // ✅ Actualizar state atómicamente
           if (mountedRef.current) {
             setState(prev => ({
               ...prev,
               appointments,
-              vipStatus
+              vipStatus,
+              services,
+              notifications
             }));
           }
 
-          console.log('✅ User data loaded successfully');
+          console.log('✅ User data loaded successfully from backend');
           
         } catch (error) {
           console.error('❌ Critical error loading user data:', error);
           
-          // Solo mostrar error si no es rate limiting y el componente está montado
-          if (!error.message?.includes('429') && !error.message?.includes('Too Many Requests') && mountedRef.current) {
+          if (!error.message?.includes('429') && mountedRef.current) {
             setError('Error cargando datos del usuario');
-          } else if (error.message?.includes('429')) {
-            console.log('⚠️ Rate limiting detected, will retry later');
           }
         } finally {
           if (mountedRef.current) {
@@ -343,11 +329,10 @@ const useAppStore = () => {
     }
     
     return await globalInitPromise;
-  }, [setLoading, setError]);
+  }, [setLoading, setError, api]);
 
-  // ✅ Initialize authentication CON PROTECCIÓN STRICTMODE MEJORADA
+  // ✅ Initialize authentication ACTUALIZADO
   const initializeAuth = useCallback(async () => {
-    // ✅ Protección global - solo ejecutar UNA VEZ
     if (globalAuthInitialized) {
       console.log('🚫 GLOBAL: Auth already initialized');
       return;
@@ -364,71 +349,70 @@ const useAppStore = () => {
     try {
       console.log('🔐 Initializing authentication...');
       
-      const accessToken = localStorage.getItem('accessToken');
-      const refreshToken = localStorage.getItem('refreshToken');
+      // ✅ Test backend connection first
+      const isBackendConnected = await testBackendConnection();
+      if (!isBackendConnected) {
+        console.warn('⚠️ Backend not available, using offline mode');
+        return;
+      }
       
-      if (accessToken && refreshToken) {
-        api.setTokens(accessToken, refreshToken);
-        const user = api.getCurrentUser();
+      if (api.isAuthenticated()) {
+        console.log('✅ Token found, getting user profile...');
         
-        if (user?.id && mountedRef.current) {
-          console.log('✅ User found in storage:', user.id);
-          
-          setState(prev => ({
-            ...prev,
-            user: user,
-            isAuthenticated: true
-          }));
-          
-          currentUserIdRef.current = user.id;
-          
-          // ✅ Cargar datos con delay para evitar race conditions
-          setTimeout(() => {
-            if (mountedRef.current) {
-              loadUserData(user.id, true);
-            }
-          }, 1000);
+        try {
+          const userResponse = await api.getCurrentUser();
+          if (userResponse?.success && userResponse.data?.user && mountedRef.current) {
+            const user = userResponse.data.user;
+            console.log('✅ User profile loaded:', user.id);
+            
+            setState(prev => ({
+              ...prev,
+              user: user,
+              isAuthenticated: true
+            }));
+            
+            currentUserIdRef.current = user.id;
+            
+            // ✅ Cargar datos después de auth
+            setTimeout(() => {
+              if (mountedRef.current) {
+                loadUserData(user.id, true);
+              }
+            }, 1000);
+          } else {
+            console.log('⚠️ Invalid user response, clearing tokens');
+            api.clearTokens();
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to get user profile:', error.message);
+          api.clearTokens();
         }
       } else {
         console.log('ℹ️ No stored tokens found');
       }
     } catch (error) {
       console.error('❌ Auth initialization failed:', error);
-      globalAuthInitialized = false; // Permitir retry
+      globalAuthInitialized = false;
       logout();
     } finally {
       if (mountedRef.current) {
         setInitializing(false);
       }
     }
-  }, [loadUserData, setInitializing]);
+  }, [loadUserData, setInitializing, testBackendConnection]);
 
-  // ✅ Session refresh mejorado
-  const refreshUserSession = useCallback(async () => {
-    const userId = currentUserIdRef.current;
-    
-    if (!userId || loadingRef.current || globalDataLoading || !mountedRef.current) {
-      console.log('🚫 Cannot refresh session - no user, already loading, or not mounted');
-      return;
-    }
-    
-    console.log('🔄 Refreshing user session for:', userId);
-    
-    // Invalidar cache para forzar recarga
-    dataCache.current.lastUpdate = 0;
-    await loadUserData(userId, false);
-  }, [loadUserData]);
-
-  // ✅ Auth functions mejoradas
+  // ✅ Auth functions ACTUALIZADAS
   const login = useCallback(async (email, password) => {
     try {
       setLoading(true);
       clearError();
       
+      console.log('🔐 Attempting login...', email);
       const response = await api.login(email, password);
       
       if (response.success && response.data && mountedRef.current) {
         const user = response.data.user;
+        console.log('✅ Login successful:', user.id);
         
         setState(prev => ({
           ...prev,
@@ -452,6 +436,7 @@ const useAppStore = () => {
       
       return response;
     } catch (error) {
+      console.error('❌ Login failed:', error);
       setError(error);
       throw error;
     } finally {
@@ -466,10 +451,12 @@ const useAppStore = () => {
       setLoading(true);
       clearError();
       
+      console.log('📝 Attempting registration...', userData.email);
       const response = await api.register(userData);
       
       if (response.success && response.data && mountedRef.current) {
         const user = response.data.user;
+        console.log('✅ Registration successful:', user.id);
         
         setState(prev => ({
           ...prev,
@@ -489,6 +476,7 @@ const useAppStore = () => {
       
       return response;
     } catch (error) {
+      console.error('❌ Registration failed:', error);
       setError(error);
       throw error;
     } finally {
@@ -515,11 +503,12 @@ const useAppStore = () => {
     dataCache.current = {
       appointments: null,
       vipStatus: null,
+      services: null,
+      notifications: null,
       lastUpdate: 0,
       ttl: 30000
     };
     
-    // Limpiar rate limiter
     rateLimiter.clearAll();
     
     if (mountedRef.current) {
@@ -527,7 +516,9 @@ const useAppStore = () => {
         ...prev,
         user: null,
         appointments: [],
+        services: [],
         vipStatus: null,
+        notifications: [],
         isAuthenticated: false,
         error: null,
         successMessage: null
@@ -535,7 +526,21 @@ const useAppStore = () => {
     }
   }, []);
 
-  // ✅ Appointment functions con protecciones mejoradas
+  // ✅ Session refresh
+  const refreshUserSession = useCallback(async () => {
+    const userId = currentUserIdRef.current;
+    
+    if (!userId || loadingRef.current || globalDataLoading || !mountedRef.current) {
+      console.log('🚫 Cannot refresh session');
+      return;
+    }
+    
+    console.log('🔄 Refreshing user session for:', userId);
+    dataCache.current.lastUpdate = 0;
+    await loadUserData(userId, false);
+  }, [loadUserData]);
+
+  // ✅ Appointment functions ACTUALIZADAS
   const addAppointment = useCallback(async (appointmentData) => {
     if (!rateLimiter.canMakeRequest('add-appointment')) {
       throw new Error('Demasiadas solicitudes. Espera un momento.');
@@ -545,21 +550,23 @@ const useAppStore = () => {
       setLoading(true);
       clearError();
       
+      console.log('📅 Creating appointment...', appointmentData);
       const response = await api.createAppointment(appointmentData);
       
       if (response.success && mountedRef.current) {
+        const newAppointment = response.data.appointment;
         setState(prev => ({
           ...prev,
-          appointments: [...prev.appointments, response.data]
+          appointments: [...prev.appointments, newAppointment]
         }));
         
-        // Invalidar cache
         dataCache.current.lastUpdate = 0;
         setSuccess('Cita agendada exitosamente');
       }
       
       return response;
     } catch (error) {
+      console.error('❌ Failed to create appointment:', error);
       if (mountedRef.current) {
         setError(error);
       }
@@ -571,44 +578,13 @@ const useAppStore = () => {
     }
   }, [setLoading, clearError, setSuccess, setError]);
 
-  const updateAppointment = useCallback(async (appointmentId, updates) => {
+  const cancelAppointment = useCallback(async (appointmentId, reason = 'Usuario canceló') => {
     try {
       setLoading(true);
       clearError();
       
-      const response = await api.updateAppointment(appointmentId, updates);
-      
-      if (response.success && mountedRef.current) {
-        setState(prev => ({
-          ...prev,
-          appointments: prev.appointments.map(apt => 
-            apt.id === appointmentId ? response.data : apt
-          )
-        }));
-        
-        dataCache.current.lastUpdate = 0;
-        setSuccess('Cita actualizada exitosamente');
-      }
-      
-      return response;
-    } catch (error) {
-      if (mountedRef.current) {
-        setError(error);
-      }
-      throw error;
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [setLoading, clearError, setSuccess, setError]);
-
-  const cancelAppointment = useCallback(async (appointmentId) => {
-    try {
-      setLoading(true);
-      clearError();
-      
-      const response = await api.cancelAppointment(appointmentId);
+      console.log('❌ Cancelling appointment:', appointmentId);
+      const response = await api.cancelAppointment(appointmentId, reason);
       
       if (response.success && mountedRef.current) {
         setState(prev => ({
@@ -624,6 +600,7 @@ const useAppStore = () => {
       
       return response;
     } catch (error) {
+      console.error('❌ Failed to cancel appointment:', error);
       if (mountedRef.current) {
         setError(error);
       }
@@ -635,31 +612,33 @@ const useAppStore = () => {
     }
   }, [setLoading, clearError, setSuccess, setError]);
 
-  const getAvailableSlots = useCallback(async (date) => {
+  const getAvailableSlots = useCallback(async (date, serviceId) => {
     try {
-      const response = await api.getAvailableSlots(date);
+      console.log('🕐 Getting available slots for:', date, serviceId);
+      const response = await api.getAvailableSlots(date, serviceId);
       if (response.success) {
-        return response.data.availableSlots;
+        return response.data.availableSlots || [];
       }
       return [];
     } catch (error) {
-      console.error('Error getting available slots:', error);
+      console.error('❌ Error getting available slots:', error);
       return [];
     }
   }, []);
 
-  // ✅ VIP functions con protecciones
-  const subscribeVip = useCallback(async (months = 1) => {
+  // ✅ VIP functions ACTUALIZADAS
+  const subscribeVip = useCallback(async (planType = 'monthly') => {
     try {
       setLoading(true);
       clearError();
       
-      const response = await api.subscribeVip(months);
+      console.log('⭐ Subscribing to VIP:', planType);
+      const response = await api.subscribeVip(planType);
       
       if (response.success && mountedRef.current) {
         setState(prev => ({ 
           ...prev, 
-          vipStatus: response.data,
+          vipStatus: response.data.subscription,
           user: { ...prev.user, isVIP: true }
         }));
         
@@ -669,6 +648,7 @@ const useAppStore = () => {
       
       return response;
     } catch (error) {
+      console.error('❌ Failed to subscribe VIP:', error);
       if (mountedRef.current) {
         setError(error);
       }
@@ -680,54 +660,19 @@ const useAppStore = () => {
     }
   }, [setLoading, clearError, setSuccess, setError]);
 
-  const unsubscribeVip = useCallback(async () => {
-    try {
-      setLoading(true);
-      clearError();
-      
-      const response = await api.unsubscribeVip();
-      
-      if (response.success && mountedRef.current) {
-        setState(prev => ({ 
-          ...prev, 
-          vipStatus: { ...prev.vipStatus, isVIP: false, active: false },
-          user: { ...prev.user, isVIP: false }
-        }));
-        
-        dataCache.current.lastUpdate = 0;
-        setSuccess('Suscripción VIP cancelada');
-      }
-      
-      return response;
-    } catch (error) {
-      if (mountedRef.current) {
-        setError(error);
-      }
-      throw error;
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [setLoading, clearError, setSuccess, setError]);
+  // ✅ Utility functions ACTUALIZADAS
+  const getPendingAppointments = useCallback(() => {
+    return state.appointments.filter(apt => 
+      apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED'
+    ).sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [state.appointments]);
 
-  // ✅ Utility functions
   const getUpcomingAppointments = useCallback(() => {
     const now = new Date();
     return state.appointments.filter(apt => {
-      const appointmentDateTime = new Date(`${apt.date}T${apt.time}:00`);
-      return appointmentDateTime > now && apt.status === 'SCHEDULED';
-    }).sort((a, b) => {
-      const dateA = new Date(`${a.date}T${a.time}:00`);
-      const dateB = new Date(`${b.date}T${b.time}:00`);
-      return dateA - dateB;
-    });
-  }, [state.appointments]);
-
-  const getPastAppointments = useCallback(() => {
-    return state.appointments.filter(apt => 
-      apt.status === 'COMPLETED'
-    ).sort((a, b) => new Date(b.date) - new Date(a.date));
+      const appointmentDate = new Date(apt.date);
+      return appointmentDate > now && (apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED');
+    }).sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [state.appointments]);
 
   const getNextAppointment = useCallback(() => {
@@ -736,31 +681,29 @@ const useAppStore = () => {
   }, [getUpcomingAppointments]);
 
   const getLastCompletedAppointment = useCallback(() => {
-    const past = getPastAppointments();
-    return past.length > 0 ? past[0] : null;
-  }, [getPastAppointments]);
+    const completed = state.appointments.filter(apt => apt.status === 'COMPLETED')
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    return completed.length > 0 ? completed[0] : null;
+  }, [state.appointments]);
 
   const isVipActive = useCallback(() => {
     return state.vipStatus?.isVIP || state.user?.isVIP || false;
   }, [state.vipStatus?.isVIP, state.user?.isVIP]);
 
   const getVipDaysRemaining = useCallback(() => {
-    if (!state.vipStatus?.daysRemaining) return 0;
-    return Math.max(0, state.vipStatus.daysRemaining);
-  }, [state.vipStatus?.daysRemaining]);
+    if (!state.vipStatus?.stats?.daysRemaining) return 0;
+    return Math.max(0, state.vipStatus.stats.daysRemaining);
+  }, [state.vipStatus?.stats?.daysRemaining]);
 
-  // ✅ Initialize auth check on mount - CON PROTECCIÓN STRICTMODE
+  // ✅ Initialize on mount
   useEffect(() => {
-    // ✅ Marcar como montado
     mountedRef.current = true;
     
-    // ✅ Protección local del store
     if (storeInitialized.current) {
       console.log('🚫 Store already initialized locally, skipping...');
       return;
     }
 
-    // ✅ Protección global para evitar múltiples instancias
     if (globalStoreInstance && globalStoreInstance !== 'current') {
       console.log('🚫 Another store instance exists, skipping...');
       return;
@@ -770,7 +713,6 @@ const useAppStore = () => {
     storeInitialized.current = true;
     globalStoreInstance = 'current';
     
-    // ✅ Delay mínimo para evitar race conditions en StrictMode
     setTimeout(() => {
       if (mountedRef.current && !globalAuthInitialized) {
         initializeAuth();
@@ -779,7 +721,6 @@ const useAppStore = () => {
     
     return () => {
       mountedRef.current = false;
-      // Solo resetear si esta instancia es la global
       if (globalStoreInstance === 'current') {
         globalStoreInstance = null;
         storeInitialized.current = false;
@@ -799,19 +740,19 @@ const useAppStore = () => {
     }
   }, [state.successMessage, clearSuccess]);
 
-  // ✅ Debug effect mejorado - solo en desarrollo
+  // ✅ Debug effect
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('📊 Store state changed:', {
+      console.log('📊 Store state:', {
         isAuthenticated: state.isAuthenticated,
         userId: state.user?.id,
         appointmentsCount: state.appointments?.length || 0,
+        servicesCount: state.services?.length || 0,
         isLoading: state.isLoading,
-        isInitializing: state.isInitializing,
         mounted: mountedRef.current
       });
     }
-  }, [state.isAuthenticated, state.user?.id, state.appointments?.length, state.isLoading, state.isInitializing]);
+  }, [state.isAuthenticated, state.user?.id, state.appointments?.length, state.services?.length, state.isLoading]);
 
   // ✅ RETURN COMPLETO
   return { 
@@ -824,24 +765,22 @@ const useAppStore = () => {
     logout,
     initializeAuth,
     refreshUserSession,
+    testBackendConnection,
     
     // Data functions
     loadUserData,
     
     // Appointment functions
     addAppointment,
-    updateAppointment,
     cancelAppointment,
     getAvailableSlots,
     
     // VIP functions
     subscribeVip,
-    unsubscribeVip,
     
     // Utility functions
     getUpcomingAppointments,
-    getPastAppointments,
-    getPendingAppointments, // ✅ Añadida función que faltaba
+    getPendingAppointments,
     getNextAppointment,
     getLastCompletedAppointment,
     isVipActive,

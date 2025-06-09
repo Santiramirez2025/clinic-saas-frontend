@@ -1,5 +1,7 @@
-// services/api.js - CORREGIDO para backend
-const API_BASE_URL = 'http://localhost:3000/api';
+// services/api.js - ACTUALIZADO para backend en Render
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://clinic-backend-z0d0.onrender.com/api'
+  : 'http://localhost:3000/api';
 
 class ApiService {
   constructor() {
@@ -86,16 +88,38 @@ class ApiService {
     return response;
   }
 
+  async logout() {
+    try {
+      await this.request('/auth/logout', {
+        method: 'POST'
+      });
+    } catch (error) {
+      console.log('Logout request failed, clearing tokens anyway');
+    }
+    
+    this.clearTokens();
+    console.log('🚪 API Service logout');
+  }
+
   // User methods - CORREGIDOS
   async getCurrentUser() {
     const response = await this.request('/auth/profile');
     return response;
   }
 
+  async updateUserProfile(userData) {
+    const response = await this.request('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+    return response;
+  }
+
   // Appointment methods - CORREGIDOS
-  async getUserAppointments(userId, filters = {}) {
+  async getUserAppointments(filters = {}) {
     const queryParams = new URLSearchParams();
     if (filters.status) queryParams.append('status', filters.status);
+    if (filters.upcoming) queryParams.append('upcoming', filters.upcoming);
     if (filters.page) queryParams.append('page', filters.page);
     if (filters.limit) queryParams.append('limit', filters.limit);
     
@@ -103,6 +127,11 @@ class ApiService {
     const endpoint = `/appointments${queryString ? `?${queryString}` : ''}`;
     
     const response = await this.request(endpoint);
+    return response;
+  }
+
+  async getAppointmentById(appointmentId) {
+    const response = await this.request(`/appointments/${appointmentId}`);
     return response;
   }
 
@@ -123,8 +152,8 @@ class ApiService {
   }
 
   async cancelAppointment(appointmentId, reason) {
-    const response = await this.request(`/appointments/${appointmentId}`, {
-      method: 'DELETE',
+    const response = await this.request(`/appointments/${appointmentId}/cancel`, {
+      method: 'POST',
       body: JSON.stringify({ reason }),
     });
     return response;
@@ -135,9 +164,19 @@ class ApiService {
     return response;
   }
 
+  async getAppointmentStats() {
+    const response = await this.request('/appointments/stats');
+    return response;
+  }
+
   // VIP methods - CORREGIDOS
   async getVipStatus() {
     const response = await this.request('/vip/status');
+    return response;
+  }
+
+  async getVipBenefits() {
+    const response = await this.request('/vip/benefits');
     return response;
   }
 
@@ -152,40 +191,77 @@ class ApiService {
     return response;
   }
 
-  async unsubscribeVip() {
+  async cancelVipSubscription(reason = 'User request') {
     const response = await this.request('/vip/cancel', {
       method: 'POST',
-      body: JSON.stringify({ reason: 'User request' }),
+      body: JSON.stringify({ reason }),
     });
     return response;
   }
 
-  // Services
+  async getVipHistory() {
+    const response = await this.request('/vip/history');
+    return response;
+  }
+
+  // Services methods
   async getServices() {
     const response = await this.request('/services');
     return response;
   }
 
-  // Tips
+  async getServiceById(serviceId) {
+    const response = await this.request(`/services/${serviceId}`);
+    return response;
+  }
+
+  // Tips methods
   async getTips() {
     const response = await this.request('/tips');
     return response;
   }
 
-  // Notifications
-  async getNotifications() {
-    const response = await this.request('/notifications');
+  async getTipById(tipId) {
+    const response = await this.request(`/tips/${tipId}`);
+    return response;
+  }
+
+  // Notifications methods
+  async getNotifications(page = 1, limit = 20) {
+    const response = await this.request(`/notifications?page=${page}&limit=${limit}`);
+    return response;
+  }
+
+  async markNotificationAsRead(notificationId) {
+    const response = await this.request(`/notifications/${notificationId}/read`, {
+      method: 'PUT'
+    });
+    return response;
+  }
+
+  async markAllNotificationsAsRead() {
+    const response = await this.request('/notifications/read-all', {
+      method: 'POST'
+    });
+    return response;
+  }
+
+  async deleteNotification(notificationId) {
+    const response = await this.request(`/notifications/${notificationId}`, {
+      method: 'DELETE'
+    });
+    return response;
+  }
+
+  // Clinic methods
+  async getClinicInfo() {
+    const response = await this.request('/clinics/current');
     return response;
   }
 
   // Utility methods
   isAuthenticated() {
     return !!this.accessToken;
-  }
-
-  logout() {
-    console.log('🚪 API Service logout');
-    this.clearTokens();
   }
 
   getCurrentUserFromToken() {
@@ -207,12 +283,42 @@ class ApiService {
 
   async healthCheck() {
     try {
-      const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
-      return response.ok;
+      const healthUrl = API_BASE_URL.replace('/api', '') + '/health';
+      console.log('🔍 Health check URL:', healthUrl);
+      
+      const response = await fetch(healthUrl);
+      const data = await response.json();
+      
+      console.log('💓 Health check response:', data);
+      return response.ok && data.status === 'OK';
     } catch (error) {
       console.error('❌ API health check failed:', error);
       return false;
     }
+  }
+
+  // Test connection method
+  async testConnection() {
+    try {
+      console.log('🧪 Testing connection to:', API_BASE_URL);
+      const isHealthy = await this.healthCheck();
+      
+      if (isHealthy) {
+        console.log('✅ Backend connection successful!');
+        return { success: true, message: 'Backend conectado correctamente' };
+      } else {
+        console.log('❌ Backend health check failed');
+        return { success: false, message: 'Backend no responde correctamente' };
+      }
+    } catch (error) {
+      console.error('❌ Connection test failed:', error);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Demo login method for testing
+  async demoLogin() {
+    return this.login('test@example.com', 'password123');
   }
 }
 

@@ -1,4 +1,4 @@
-// components/ModernLogin.jsx
+// components/ModernLogin.jsx - OPTIMIZADO PARA BACKEND
 import React, { useState, useEffect } from 'react';
 import { 
   Eye, 
@@ -14,7 +14,9 @@ import {
   Shield,
   Heart,
   Star,
-  Zap
+  Zap,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 // 🎨 COMPONENTE 1: Fondo animado con partículas
@@ -106,7 +108,38 @@ const ModernHeader = ({ clinicName, isLogin }) => {
   );
 };
 
-// 🎨 COMPONENTE 3: Toggle moderno para Login/Registro
+// 🎨 COMPONENTE 3: Indicador de conexión al backend
+const BackendConnectionIndicator = ({ isConnected, isLoading }) => {
+  if (isLoading) {
+    return (
+      <div className="fixed top-4 right-4 bg-yellow-100 border border-yellow-300 rounded-lg px-3 py-2 flex items-center space-x-2 z-50">
+        <div className="animate-spin rounded-full h-4 w-4 border-2 border-yellow-600 border-t-transparent"></div>
+        <span className="text-yellow-800 text-sm font-medium">Conectando...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`fixed top-4 right-4 rounded-lg px-3 py-2 flex items-center space-x-2 z-50 transition-all duration-300 ${
+      isConnected 
+        ? 'bg-green-100 border border-green-300' 
+        : 'bg-red-100 border border-red-300'
+    }`}>
+      {isConnected ? (
+        <Wifi size={16} className="text-green-600" />
+      ) : (
+        <WifiOff size={16} className="text-red-600" />
+      )}
+      <span className={`text-sm font-medium ${
+        isConnected ? 'text-green-800' : 'text-red-800'
+      }`}>
+        {isConnected ? 'Conectado' : 'Sin conexión'}
+      </span>
+    </div>
+  );
+};
+
+// 🎨 COMPONENTE 4: Toggle moderno para Login/Registro
 const ModernToggle = ({ isLogin, onToggle }) => {
   return (
     <div className="relative bg-gray-100 rounded-2xl p-1 mb-8">
@@ -151,7 +184,7 @@ const ModernToggle = ({ isLogin, onToggle }) => {
   );
 };
 
-// 🎨 COMPONENTE 4: Input field moderno con animaciones
+// 🎨 COMPONENTE 5: Input field moderno con animaciones
 const ModernInputField = ({ 
   type, 
   placeholder, 
@@ -231,12 +264,12 @@ const ModernInputField = ({
   );
 };
 
-// 🎨 COMPONENTE 5: Botón de envío moderno
-const ModernSubmitButton = ({ isLoading, isLogin, onClick }) => {
+// 🎨 COMPONENTE 6: Botón de envío moderno
+const ModernSubmitButton = ({ isLoading, isLogin, onClick, disabled = false }) => {
   return (
     <button
       onClick={onClick}
-      disabled={isLoading}
+      disabled={isLoading || disabled}
       className="group relative w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-bold text-lg overflow-hidden transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-xl hover:shadow-2xl"
     >
       {/* Efecto de brillo en hover */}
@@ -260,7 +293,7 @@ const ModernSubmitButton = ({ isLoading, isLogin, onClick }) => {
   );
 };
 
-// 🎨 COMPONENTE 6: Demo credentials mejorado
+// 🎨 COMPONENTE 7: Demo credentials mejorado
 const DemoCredentials = ({ onDemoLogin, isLoading }) => {
   return (
     <div className="relative overflow-hidden bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-200">
@@ -280,11 +313,11 @@ const DemoCredentials = ({ onDemoLogin, isLoading }) => {
         <div className="space-y-2 mb-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-blue-700 font-medium">Email:</span>
-            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded">test@example.com</span>
+            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded text-xs">test@example.com</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-blue-700 font-medium">Contraseña:</span>
-            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded">password123</span>
+            <span className="text-blue-600 font-mono bg-blue-100 px-2 py-1 rounded text-xs">password123</span>
           </div>
         </div>
 
@@ -311,8 +344,30 @@ const ModernLogin = ({ store }) => {
     phone: ''
   });
   const [validationErrors, setValidationErrors] = useState({});
+  const [backendConnected, setBackendConnected] = useState(null);
+  const [testingConnection, setTestingConnection] = useState(false);
 
-  // Form validation
+  // ✅ Test backend connection on mount
+  useEffect(() => {
+    const testConnection = async () => {
+      setTestingConnection(true);
+      try {
+        const result = await store.testBackendConnection();
+        setBackendConnected(result);
+      } catch (error) {
+        console.error('Connection test failed:', error);
+        setBackendConnected(false);
+      } finally {
+        setTestingConnection(false);
+      }
+    };
+
+    // Test connection after 1 second
+    const timer = setTimeout(testConnection, 1000);
+    return () => clearTimeout(timer);
+  }, [store]);
+
+  // Form validation MEJORADA
   const validateForm = () => {
     const errors = {};
     
@@ -331,7 +386,10 @@ const ModernLogin = ({ store }) => {
     if (!isLogin) {
       if (!formData.name.trim()) {
         errors.name = 'El nombre es requerido';
+      } else if (formData.name.trim().length < 2) {
+        errors.name = 'El nombre debe tener al menos 2 caracteres';
       }
+      
       if (!formData.phone.trim()) {
         errors.phone = 'El teléfono es requerido';
       } else if (!/^\+?[\d\s\-\(\)]+$/.test(formData.phone)) {
@@ -348,19 +406,28 @@ const ModernLogin = ({ store }) => {
       return;
     }
 
+    // Verificar conexión al backend
+    if (backendConnected === false) {
+      store.setError('No hay conexión con el servidor. Intenta más tarde.');
+      return;
+    }
+
     try {
       if (isLogin) {
+        console.log('🔐 Attempting login with:', formData.email);
         await store.login(formData.email, formData.password);
       } else {
+        console.log('📝 Attempting registration with:', formData.email);
         await store.register({
-          name: formData.name,
-          email: formData.email,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
           password: formData.password,
-          phone: formData.phone
+          phone: formData.phone.trim()
         });
       }
     } catch (error) {
       console.error('Auth error:', error);
+      // El error ya se maneja en el store
     }
   };
 
@@ -387,11 +454,19 @@ const ModernLogin = ({ store }) => {
       phone: ''
     });
     setValidationErrors({});
-    store.clearError();
+    if (store.error) {
+      store.clearError();
+    }
   };
 
   const handleDemoLogin = async () => {
+    if (backendConnected === false) {
+      store.setError('No hay conexión con el servidor. Intenta más tarde.');
+      return;
+    }
+
     try {
+      console.log('🧪 Demo login attempt');
       await store.login('test@example.com', 'password123');
     } catch (error) {
       console.error('Demo login error:', error);
@@ -402,6 +477,12 @@ const ModernLogin = ({ store }) => {
     <div className="min-h-screen relative flex items-center justify-center p-6">
       {/* Fondo animado */}
       <AnimatedBackground />
+
+      {/* Indicador de conexión */}
+      <BackendConnectionIndicator 
+        isConnected={backendConnected} 
+        isLoading={testingConnection} 
+      />
 
       {/* Contenido principal */}
       <div className="relative z-10 w-full max-w-md">
@@ -492,6 +573,7 @@ const ModernLogin = ({ store }) => {
               isLoading={store.isLoading}
               isLogin={isLogin}
               onClick={handleSubmit}
+              disabled={backendConnected === false}
             />
           </div>
 
