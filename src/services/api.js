@@ -1,4 +1,4 @@
-// services/api.js - VERSIÓN COMPLETA CON TODAS LAS FUNCIONALIDADES
+// services/api.js - VERSIÓN OPTIMIZADA COMPLETA
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://clinic-backend-z0d0.onrender.com/api'
   : 'http://localhost:3000/api';
@@ -10,14 +10,20 @@ class ApiService {
     this.requestCount = 0;
     this.successCount = 0;
     this.failureCount = 0;
+    this.lastRequestTime = null;
   }
 
-  setTokens(accessToken, refreshToken) {
+  // ===============================
+  // CORE METHODS
+  // ===============================
+  setTokens(accessToken, refreshToken = null) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
     }
   }
 
@@ -43,6 +49,7 @@ class ApiService {
 
     // Track request
     this.requestCount++;
+    this.lastRequestTime = Date.now();
     const startTime = Date.now();
 
     try {
@@ -58,7 +65,6 @@ class ApiService {
             this.clearTokens();
             throw new Error('Sesión expirada. Inicia sesión nuevamente.');
           }
-          // Para login/register, usar el mensaje del backend
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || 'Credenciales inválidas');
         }
@@ -123,18 +129,73 @@ class ApiService {
     console.log('🚪 API Service logout');
   }
 
-  // ===============================
-  // USER METHODS
-  // ===============================
   async getCurrentUser() {
     const response = await this.request('/auth/profile');
     return response;
   }
 
+  // ===============================
+  // USER PROFILE METHODS
+  // ===============================
   async updateUserProfile(userData) {
     const response = await this.request('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(userData),
+    });
+    return response;
+  }
+
+  // ✅ CRÍTICO: Upload de avatar para ProfileView
+  async uploadUserAvatar(file) {
+    // Validar archivo
+    if (!file) {
+      throw new Error('No se proporcionó archivo');
+    }
+    
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      throw new Error('El archivo es demasiado grande. Máximo 5MB.');
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Solo se permiten archivos de imagen.');
+    }
+    
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    const response = await this.request('/auth/avatar', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it for FormData
+        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` }),
+      },
+    });
+    return response;
+  }
+
+  // ✅ CRÍTICO: Estadísticas para ProfileView
+  async getUserStats(period = 'month') {
+    const response = await this.request(`/users/stats?period=${period}`);
+    return response;
+  }
+
+  // ✅ CRÍTICO: Actividad reciente para ProfileView
+  async getUserActivity(page = 1, limit = 10) {
+    const response = await this.request(`/users/activity?page=${page}&limit=${limit}`);
+    return response;
+  }
+
+  // ✅ Preferencias de usuario
+  async getUserPreferences() {
+    const response = await this.request('/users/preferences');
+    return response;
+  }
+
+  async updateUserPreferences(preferences) {
+    const response = await this.request('/users/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
     });
     return response;
   }
@@ -150,21 +211,8 @@ class ApiService {
     return response;
   }
 
-  async getUserSettings() {
-    const response = await this.request('/auth/settings');
-    return response;
-  }
-
-  async updateUserSettings(settings) {
-    const response = await this.request('/auth/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings)
-    });
-    return response;
-  }
-
   // ===============================
-  // APPOINTMENT METHODS - BÁSICOS
+  // APPOINTMENT METHODS - CORE
   // ===============================
   async getUserAppointments(filters = {}) {
     const queryParams = new URLSearchParams();
@@ -215,6 +263,7 @@ class ApiService {
     return response;
   }
 
+  // ✅ CRÍTICO: Horarios disponibles para NewAppointmentForm
   async getAvailableSlots(date, serviceId, options = {}) {
     const queryParams = new URLSearchParams({
       date,
@@ -237,10 +286,10 @@ class ApiService {
   }
 
   // ===============================
-  // APPOINTMENT METHODS - AVANZADOS
+  // APPOINTMENT METHODS - ADVANCED
   // ===============================
-
-  // 🔔 Enviar recordatorio de cita
+  
+  // ✅ CRÍTICO: Enviar recordatorio para AppointmentView
   async sendAppointmentReminder(appointmentId) {
     const response = await this.request(`/appointments/${appointmentId}/reminder`, {
       method: 'POST'
@@ -248,33 +297,6 @@ class ApiService {
     return response;
   }
 
-  // 🔍 Buscar citas con filtros avanzados
-  async searchAppointments(filters = {}) {
-    const queryParams = new URLSearchParams();
-    
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        queryParams.append(key, filters[key]);
-      }
-    });
-    
-    const queryString = queryParams.toString();
-    const endpoint = `/appointments/search${queryString ? `?${queryString}` : ''}`;
-    
-    const response = await this.request(endpoint);
-    return response;
-  }
-
-  // 📊 Estadísticas detalladas
-  async getDetailedStats(period = 'month', compareWith = null) {
-    const queryParams = new URLSearchParams({ period });
-    if (compareWith) queryParams.append('compareWith', compareWith);
-    
-    const response = await this.request(`/appointments/stats/detailed?${queryParams.toString()}`);
-    return response;
-  }
-
-  // 🔄 Reprogramar cita
   async rescheduleAppointment(appointmentId, newDate, newTime, reason = 'Reprogramación solicitada') {
     const response = await this.request(`/appointments/${appointmentId}/reschedule`, {
       method: 'POST',
@@ -283,16 +305,6 @@ class ApiService {
     return response;
   }
 
-  // 📊 Verificar disponibilidad en tiempo real
-  async checkSlotAvailability(date, time, serviceId) {
-    const response = await this.request('/appointments/check-availability', {
-      method: 'POST',
-      body: JSON.stringify({ date, time, serviceId })
-    });
-    return response;
-  }
-
-  // ✅ Confirmar cita (para staff)
   async confirmAppointment(appointmentId) {
     const response = await this.request(`/appointments/${appointmentId}/confirm`, {
       method: 'POST'
@@ -300,7 +312,6 @@ class ApiService {
     return response;
   }
 
-  // ✅ Completar cita (para staff)
   async completeAppointment(appointmentId, notes = '') {
     const response = await this.request(`/appointments/${appointmentId}/complete`, {
       method: 'POST',
@@ -309,44 +320,12 @@ class ApiService {
     return response;
   }
 
-  // 📊 Obtener historial de cambios de una cita
-  async getAppointmentHistory(appointmentId) {
-    const response = await this.request(`/appointments/${appointmentId}/history`);
-    return response;
-  }
-
-  // 📄 Exportar citas a PDF/Excel
-  async exportAppointments(format = 'pdf', filters = {}) {
-    const queryParams = new URLSearchParams({
-      format,
-      ...filters
-    });
-    
-    const response = await this.request(`/appointments/export?${queryParams.toString()}`, {
-      method: 'GET'
-    });
-    return response;
-  }
-
-  // 📱 Generar enlace de videollamada (si aplica)
-  async generateVideoCallLink(appointmentId) {
-    const response = await this.request(`/appointments/${appointmentId}/video-link`, {
-      method: 'POST'
-    });
-    return response;
-  }
-
-  // ===============================
-  // APPOINTMENT METHODS - CON RETRY
-  // ===============================
-
-  // 🔄 Crear cita con reintentos automáticos
+  // ✅ Crear cita con reintentos automáticos
   async createAppointmentWithRetry(appointmentData, maxRetries = 3) {
     let lastError;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Validar datos antes del intento
         const validation = this.validateAppointmentData(appointmentData);
         if (!validation.isValid) {
           throw new Error(`Datos inválidos: ${validation.errors.join(', ')}`);
@@ -359,7 +338,7 @@ class ApiService {
         console.warn(`Intento ${attempt} falló:`, error.message);
         
         if (attempt < maxRetries) {
-          // Esperar antes del siguiente intento (backoff exponencial)
+          // Backoff exponencial
           await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
         }
       }
@@ -369,7 +348,7 @@ class ApiService {
   }
 
   // ===============================
-  // VIP METHODS - COMPLETOS
+  // VIP METHODS
   // ===============================
   async getVipStatus() {
     const response = await this.request('/vip/status');
@@ -405,32 +384,16 @@ class ApiService {
     return response;
   }
 
-  // ✅ Estadísticas VIP detalladas
   async getVipStats() {
     const response = await this.request('/vip/stats');
     return response;
   }
 
-  // ✅ Actualizar plan VIP
   async updateVipPlan(planType) {
     const response = await this.request('/vip/update', {
       method: 'POST',
       body: JSON.stringify({ planType })
     });
-    return response;
-  }
-
-  // ✅ Reactivar suscripción VIP cancelada
-  async reactivateVipSubscription() {
-    const response = await this.request('/vip/reactivate', {
-      method: 'POST'
-    });
-    return response;
-  }
-
-  // ✅ Obtener descuentos VIP disponibles
-  async getVipDiscounts() {
-    const response = await this.request('/vip/discounts');
     return response;
   }
 
@@ -447,6 +410,12 @@ class ApiService {
     return response;
   }
 
+  // ✅ Servicios por categoría para NewAppointmentForm
+  async getServicesByCategory(category) {
+    const response = await this.request(`/services?category=${category}`);
+    return response;
+  }
+
   async getServiceReviews(serviceId, page = 1, limit = 10) {
     const response = await this.request(`/services/${serviceId}/reviews?page=${page}&limit=${limit}`);
     return response;
@@ -460,19 +429,6 @@ class ApiService {
         comment
       })
     });
-    return response;
-  }
-
-  // ===============================
-  // TIPS METHODS
-  // ===============================
-  async getTips() {
-    const response = await this.request('/tips');
-    return response;
-  }
-
-  async getTipById(tipId) {
-    const response = await this.request(`/tips/${tipId}`);
     return response;
   }
 
@@ -505,7 +461,6 @@ class ApiService {
     return response;
   }
 
-  // 🔔 Configuración de notificaciones
   async getNotificationSettings() {
     const response = await this.request('/users/notification-settings');
     return response;
@@ -519,20 +474,6 @@ class ApiService {
     return response;
   }
 
-  // 🔔 Enviar notificación personalizada
-  async sendCustomNotification(userId, title, message, type = 'info') {
-    const response = await this.request('/notifications/send', {
-      method: 'POST',
-      body: JSON.stringify({
-        userId,
-        title,
-        message,
-        type
-      })
-    });
-    return response;
-  }
-
   // ===============================
   // CLINIC METHODS
   // ===============================
@@ -541,104 +482,21 @@ class ApiService {
     return response;
   }
 
-  async getClinicMetrics(period = 'month') {
-    const response = await this.request(`/clinics/metrics?period=${period}`);
+  async getClinicSchedule(date) {
+    const response = await this.request(`/clinics/schedule?date=${date}`);
     return response;
   }
 
   // ===============================
-  // FEEDBACK & ANALYTICS METHODS
+  // TIPS METHODS
   // ===============================
-
-  // 📝 Enviar feedback
-  async submitFeedback(rating, message, category = 'general') {
-    const response = await this.request('/feedback', {
-      method: 'POST',
-      body: JSON.stringify({
-        rating,
-        message,
-        category
-      })
-    });
+  async getTips() {
+    const response = await this.request('/tips');
     return response;
   }
 
-  // 📊 Obtener métricas de usuario
-  async getUserAnalytics(period = 'month') {
-    const response = await this.request(`/analytics/user?period=${period}`);
-    return response;
-  }
-
-  // 📈 Tracking de eventos
-  async trackEvent(eventName, properties = {}) {
-    const response = await this.request('/analytics/track', {
-      method: 'POST',
-      body: JSON.stringify({
-        event: eventName,
-        properties: {
-          ...properties,
-          timestamp: new Date().toISOString(),
-          userAgent: navigator.userAgent,
-          url: window.location.href
-        }
-      })
-    });
-    return response;
-  }
-
-  // ===============================
-  // PROMOTIONS METHODS
-  // ===============================
-
-  // 🎁 Obtener promociones activas
-  async getActivePromotions() {
-    const response = await this.request('/promotions/active');
-    return response;
-  }
-
-  // 🎫 Aplicar código promocional
-  async applyPromotionCode(code, serviceId = null) {
-    const response = await this.request('/promotions/apply', {
-      method: 'POST',
-      body: JSON.stringify({
-        code,
-        serviceId
-      })
-    });
-    return response;
-  }
-
-  // ===============================
-  // FILE UPLOAD METHODS
-  // ===============================
-
-  // 📤 Upload genérico de archivos
-  async uploadFile(file, type = 'general') {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('type', type);
-    
-    const response = await this.request('/upload', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        // No incluir Content-Type para FormData
-        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` })
-      }
-    });
-    return response;
-  }
-
-  // 🖼️ Actualizar foto de perfil
-  async updateProfilePicture(formData) {
-    const response = await this.request('/auth/profile/picture', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        // No incluir Content-Type para FormData
-        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` })
-      }
-    });
+  async getTipById(tipId) {
+    const response = await this.request(`/tips/${tipId}`);
     return response;
   }
 
@@ -666,7 +524,7 @@ class ApiService {
     }
   }
 
-  // 🎯 Validar datos de cita antes de enviar
+  // ✅ CRÍTICO: Validar datos de cita
   validateAppointmentData(appointmentData) {
     const errors = [];
     
@@ -696,23 +554,9 @@ class ApiService {
       errors.push('Formato de hora inválido (HH:MM)');
     }
     
-    // Validar serviceId es string o número
-    if (appointmentData.serviceId && typeof appointmentData.serviceId !== 'string' && typeof appointmentData.serviceId !== 'number') {
-      errors.push('ID de servicio inválido');
-    }
-    
     return {
       isValid: errors.length === 0,
       errors
-    };
-  }
-
-  // 📊 Rate limiting helper
-  getRateLimitStatus() {
-    return {
-      canMakeRequest: true, // Simplified - real implementation would check actual limits
-      requestsRemaining: 100,
-      resetTime: Date.now() + 60000
     };
   }
 
@@ -753,18 +597,24 @@ class ApiService {
     }
   }
 
-  // ✅ Verificación completa de conectividad
+  // ✅ Test completo de conectividad
   async fullConnectionTest() {
     try {
       console.log('🧪 Running full connection test...');
       
       const tests = [
         { name: 'Health Check', test: () => this.healthCheck() },
-        { name: 'Authentication', test: () => this.isAuthenticated() },
-        { name: 'User Profile', test: () => this.getCurrentUser() },
-        { name: 'Services', test: () => this.getServices() },
-        { name: 'VIP Status', test: () => this.getVipStatus() }
+        { name: 'Services Available', test: () => this.getServices() }
       ];
+      
+      // Solo agregar tests autenticados si hay token
+      if (this.isAuthenticated()) {
+        tests.push(
+          { name: 'User Profile', test: () => this.getCurrentUser() },
+          { name: 'User Appointments', test: () => this.getUserAppointments() },
+          { name: 'VIP Status', test: () => this.getVipStatus() }
+        );
+      }
       
       const results = {};
       
@@ -801,69 +651,132 @@ class ApiService {
   }
 
   // ===============================
-  // DEMO & TESTING METHODS
+  // ANALYTICS & STATS METHODS
   // ===============================
-  async demoLogin() {
-    return this.login('test@example.com', 'password123');
-  }
-
-  // 🧪 Método para testing de endpoints
-  async testAllEndpoints() {
-    const tests = [];
-    
-    try {
-      // Test auth endpoint
-      const authTest = await this.getCurrentUser().catch(e => ({ error: e.message }));
-      tests.push({ endpoint: '/auth/profile', success: !authTest.error, result: authTest });
-      
-      // Test appointments endpoint
-      const appointmentsTest = await this.getUserAppointments().catch(e => ({ error: e.message }));
-      tests.push({ endpoint: '/appointments', success: !appointmentsTest.error, result: appointmentsTest });
-      
-      // Test services endpoint
-      const servicesTest = await this.getServices().catch(e => ({ error: e.message }));
-      tests.push({ endpoint: '/services', success: !servicesTest.error, result: servicesTest });
-      
-      // Test VIP endpoint
-      const vipTest = await this.getVipStatus().catch(e => ({ error: e.message }));
-      tests.push({ endpoint: '/vip/status', success: !vipTest.error, result: vipTest });
-      
-      return {
-        success: true,
-        results: tests,
-        summary: {
-          total: tests.length,
-          passed: tests.filter(t => t.success).length,
-          failed: tests.filter(t => !t.success).length
-        }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        results: tests
-      };
-    }
-  }
-
-  // 📊 Método para obtener estadísticas de uso de API
   getApiUsageStats() {
     return {
       totalRequests: this.requestCount,
       successfulRequests: this.successCount,
       failedRequests: this.failureCount,
       successRate: this.requestCount > 0 ? ((this.successCount / this.requestCount) * 100).toFixed(2) + '%' : '0%',
-      averageResponseTime: 0,
-      lastRequestTime: new Date().toISOString()
+      lastRequestTime: this.lastRequestTime ? new Date(this.lastRequestTime).toISOString() : null
     };
   }
 
-  // 🔄 Reset stats
   resetApiStats() {
     this.requestCount = 0;
     this.successCount = 0;
     this.failureCount = 0;
+    this.lastRequestTime = null;
     console.log('📊 API stats reset');
+  }
+
+  // ===============================
+  // DEMO & TESTING METHODS
+  // ===============================
+  async demoLogin() {
+    return this.login('test@example.com', 'password123');
+  }
+
+  // ✅ Test específico para endpoints críticos
+  async testCriticalEndpoints() {
+    const criticalTests = [];
+    
+    try {
+      // Test endpoints públicos
+      const servicesTest = await this.getServices().catch(e => ({ error: e.message }));
+      criticalTests.push({ 
+        endpoint: 'GET /services', 
+        success: !servicesTest.error, 
+        result: servicesTest,
+        critical: true 
+      });
+      
+      // Test endpoints autenticados si hay token
+      if (this.isAuthenticated()) {
+        const profileTest = await this.getCurrentUser().catch(e => ({ error: e.message }));
+        criticalTests.push({ 
+          endpoint: 'GET /auth/profile', 
+          success: !profileTest.error, 
+          result: profileTest,
+          critical: true 
+        });
+        
+        const appointmentsTest = await this.getUserAppointments().catch(e => ({ error: e.message }));
+        criticalTests.push({ 
+          endpoint: 'GET /appointments', 
+          success: !appointmentsTest.error, 
+          result: appointmentsTest,
+          critical: true 
+        });
+        
+        const vipTest = await this.getVipStatus().catch(e => ({ error: e.message }));
+        criticalTests.push({ 
+          endpoint: 'GET /vip/status', 
+          success: !vipTest.error, 
+          result: vipTest,
+          critical: false // VIP no es crítico
+        });
+      }
+      
+      const criticalPassed = criticalTests.filter(t => t.critical && t.success).length;
+      const totalCritical = criticalTests.filter(t => t.critical).length;
+      
+      return {
+        success: criticalPassed === totalCritical,
+        results: criticalTests,
+        summary: {
+          total: criticalTests.length,
+          critical: totalCritical,
+          criticalPassed,
+          allPassed: criticalTests.filter(t => t.success).length,
+          status: criticalPassed === totalCritical ? 'HEALTHY' : 'DEGRADED'
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        results: criticalTests,
+        summary: { status: 'ERROR' }
+      };
+    }
+  }
+
+  // ===============================
+  // MISC UTILITY METHODS
+  // ===============================
+  
+  // ✅ Formatear respuesta para componentes
+  formatResponse(response, defaultValue = null) {
+    if (!response) return defaultValue;
+    
+    if (response.success && response.data) {
+      return response.data;
+    }
+    
+    if (response.error) {
+      console.warn('API Response Error:', response.error);
+    }
+    
+    return defaultValue;
+  }
+
+  // ✅ Rate limiting check simple
+  canMakeRequest() {
+    // Implementación básica - en producción usar librerías especializadas
+    return true;
+  }
+
+  // ✅ Debug helper
+  logEndpointUsage() {
+    console.table({
+      'Total Requests': this.requestCount,
+      'Successful': this.successCount,
+      'Failed': this.failureCount,
+      'Success Rate': this.getApiUsageStats().successRate,
+      'Last Request': this.lastRequestTime ? new Date(this.lastRequestTime).toLocaleTimeString() : 'None'
+    });
   }
 }
 

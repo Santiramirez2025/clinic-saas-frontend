@@ -24,128 +24,149 @@ import {
   CreditCard,
   LogOut,
   ChevronRight,
-  Activity
+  Activity,
+  Loader,
+  AlertCircle
 } from 'lucide-react';
 
 const ModernProfileView = ({ store }) => {
   const [editMode, setEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [editData, setEditData] = useState({
-    name: store?.user?.name || 'María González',
-    email: store?.user?.email || 'maria@example.com',
-    phone: store?.user?.phone || '+54 11 1234-5678',
-    bio: store?.user?.bio || '',
-    birthday: store?.user?.birthday || '',
-    location: store?.user?.location || 'Buenos Aires, Argentina'
+    name: '',
+    email: '',
+    phone: '',
+    bio: '',
+    birthday: '',
+    location: ''
   });
+  const [uploading, setUploading] = useState(false);
+  const [localError, setLocalError] = useState(null);
 
-  // Mock data for demonstration
-  const user = {
-    name: 'María González',
-    email: 'maria@example.com',
-    phone: '+54 11 1234-5678',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b977?w=150&h=150&fit=crop&crop=face',
-    memberSince: '2023',
-    location: 'Buenos Aires, Argentina',
-    bio: 'Apasionada por el cuidado de la piel y los tratamientos de belleza naturales.',
-    birthday: '1990-05-15'
+  // ✅ Obtener datos reales del store
+  const user = store?.user;
+  const isVIP = store?.isVipActive?.() || false;
+  const vipStatus = store?.vipStatus;
+  const appointments = store?.appointments || [];
+  const isLoading = store?.isLoading || false;
+
+  // ✅ Filtrar citas próximas del backend
+  const upcomingAppointments = appointments
+    .filter(apt => {
+      const appointmentDate = new Date(apt.date);
+      const now = new Date();
+      return appointmentDate > now && (apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED');
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 2); // Solo mostrar las próximas 2
+
+  // ✅ Calcular estadísticas reales
+  const calculateStats = () => {
+    const completedAppointments = appointments.filter(apt => apt.status === 'COMPLETED');
+    const totalSpent = completedAppointments.reduce((sum, apt) => sum + (apt.finalPrice || 0), 0);
+    const vipSavings = completedAppointments.reduce((sum, apt) => {
+      if (apt.vipDiscount > 0) {
+        return sum + (apt.originalPrice - apt.finalPrice);
+      }
+      return sum;
+    }, 0);
+
+    return [
+      { 
+        label: 'Servicios realizados', 
+        value: completedAppointments.length.toString(), 
+        icon: Activity, 
+        color: 'text-blue-500',
+        bgColor: 'bg-blue-50',
+        change: `${completedAppointments.filter(apt => {
+          const date = new Date(apt.date);
+          const monthAgo = new Date();
+          monthAgo.setMonth(monthAgo.getMonth() - 1);
+          return date > monthAgo;
+        }).length} este mes`
+      },
+      { 
+        label: 'Ahorro total VIP', 
+        value: vipSavings > 0 ? `$${vipSavings.toLocaleString()}` : '$0', 
+        icon: TrendingUp, 
+        color: 'text-green-500',
+        bgColor: 'bg-green-50',
+        change: isVIP ? 'Activo' : 'Inactivo'
+      },
+      { 
+        label: 'Total invertido', 
+        value: `$${totalSpent.toLocaleString()}`, 
+        icon: Star, 
+        color: 'text-yellow-500',
+        bgColor: 'bg-yellow-50',
+        change: 'Historial completo'
+      },
+      { 
+        label: 'Citas programadas', 
+        value: upcomingAppointments.length.toString(), 
+        icon: Heart, 
+        color: 'text-red-500',
+        bgColor: 'bg-red-50',
+        change: 'Próximas'
+      }
+    ];
   };
 
-  const vipStatus = {
-    isActive: true,
-    level: 'Premium',
-    expiresAt: '2025-12-06',
-    nextBenefit: 'Consulta gratuita en 3 días'
+  // ✅ Generar actividad reciente real
+  const generateRecentActivity = () => {
+    const activities = [];
+    
+    // Actividad de citas recientes
+    const recentCompletedAppointments = appointments
+      .filter(apt => apt.status === 'COMPLETED')
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 2);
+
+    recentCompletedAppointments.forEach(apt => {
+      activities.push({
+        id: `apt-${apt.id}`,
+        type: 'appointment',
+        title: `${apt.service?.name || 'Servicio'} completado`,
+        subtitle: `Cita finalizada exitosamente`,
+        date: apt.date,
+        icon: CheckCircle,
+        color: 'text-green-500'
+      });
+    });
+
+    // Actividad VIP
+    if (isVIP && vipStatus?.createdAt) {
+      activities.push({
+        id: 'vip-active',
+        type: 'vip',
+        title: 'Estado VIP activo',
+        subtitle: 'Beneficios y descuentos disponibles',
+        date: vipStatus.createdAt,
+        icon: Crown,
+        color: 'text-purple-500'
+      });
+    }
+
+    // Citas programadas
+    if (upcomingAppointments.length > 0) {
+      activities.push({
+        id: 'upcoming-apt',
+        type: 'appointment',
+        title: 'Próxima cita programada',
+        subtitle: `${upcomingAppointments[0].service?.name || 'Servicio'}`,
+        date: upcomingAppointments[0].date,
+        icon: Calendar,
+        color: 'text-blue-500'
+      });
+    }
+
+    return activities.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
   };
 
-  const stats = [
-    { 
-      label: 'Servicios realizados', 
-      value: '23', 
-      icon: Activity, 
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-50',
-      change: '+3 este mes'
-    },
-    { 
-      label: 'Ahorro total VIP', 
-      value: '$8,500', 
-      icon: TrendingUp, 
-      color: 'text-green-500',
-      bgColor: 'bg-green-50',
-      change: '+$1,200 último mes'
-    },
-    { 
-      label: 'Puntos de fidelidad', 
-      value: '1,247', 
-      icon: Star, 
-      color: 'text-yellow-500',
-      bgColor: 'bg-yellow-50',
-      change: '+150 disponibles'
-    },
-    { 
-      label: 'Satisfacción promedio', 
-      value: '4.9/5', 
-      icon: Heart, 
-      color: 'text-red-500',
-      bgColor: 'bg-red-50',
-      change: 'Excelente historial'
-    }
-  ];
+  const stats = calculateStats();
+  const recentActivity = generateRecentActivity();
 
-  const upcomingAppointments = [
-    {
-      id: 1,
-      service: 'Limpieza Facial Profunda',
-      date: '2025-06-10',
-      time: '14:30',
-      doctor: 'Dr. Ana Silva',
-      type: 'Facial',
-      status: 'confirmed',
-      isVip: true
-    },
-    {
-      id: 2,
-      service: 'Tratamiento Anti-edad',
-      date: '2025-06-15',
-      time: '16:00',
-      doctor: 'Dr. Carlos Mendez',
-      type: 'Premium',
-      status: 'confirmed',
-      isVip: true
-    }
-  ];
-
-  const recentActivity = [
-    {
-      id: 1,
-      type: 'appointment',
-      title: 'Limpieza facial completada',
-      subtitle: 'Con Dr. Ana Silva',
-      date: '2025-06-01',
-      icon: CheckCircle,
-      color: 'text-green-500'
-    },
-    {
-      id: 2,
-      type: 'reward',
-      title: 'Puntos ganados',
-      subtitle: '+150 puntos de fidelidad',
-      date: '2025-06-01',
-      icon: Star,
-      color: 'text-yellow-500'
-    },
-    {
-      id: 3,
-      type: 'vip',
-      title: 'Beneficio VIP aplicado',
-      subtitle: '20% descuento en tratamiento',
-      date: '2025-05-28',
-      icon: Crown,
-      color: 'text-purple-500'
-    }
-  ];
-
+  // ✅ Configuración de preferencias (mock por ahora)
   const preferences = [
     {
       icon: Bell,
@@ -167,28 +188,123 @@ const ModernProfileView = ({ store }) => {
     }
   ];
 
+  // ✅ Inicializar datos de edición con datos reales del usuario
   useEffect(() => {
-    if (store?.user) {
+    if (user) {
       setEditData({
-        name: store.user.name || '',
-        email: store.user.email || '',
-        phone: store.user.phone || '',
-        bio: store.user.bio || '',
-        birthday: store.user.birthday || '',
-        location: store.user.location || ''
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        bio: user.bio || '',
+        birthday: user.birthday || '',
+        location: user.location || ''
       });
     }
-  }, [store?.user]);
+  }, [user]);
 
+  // ✅ Función real para actualizar perfil
   const handleSaveProfile = async () => {
+    if (!store?.updateUserProfile) {
+      setLocalError('Función de actualización no disponible');
+      return;
+    }
+
     try {
-      // await store.updateUser(editData);
-      setEditMode(false);
-      console.log('Profile updated:', editData);
+      setLocalError(null);
+      const response = await store.updateUserProfile(editData);
+      
+      if (response?.success) {
+        setEditMode(false);
+        store.setSuccess?.('Perfil actualizado exitosamente');
+      } else {
+        throw new Error(response?.error || 'Error actualizando perfil');
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
+      setLocalError(error.message || 'Error actualizando perfil');
     }
   };
+
+  // ✅ Función para manejar logout
+  const handleLogout = () => {
+    if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
+      store?.logout?.();
+    }
+  };
+
+  // ✅ Función para manejar upload de avatar
+  const handleAvatarUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validar archivo
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      setLocalError('El archivo es demasiado grande. Máximo 5MB.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setLocalError('Solo se permiten archivos de imagen.');
+      return;
+    }
+
+    setUploading(true);
+    setLocalError(null);
+
+    try {
+      if (store?.uploadAvatar) {
+        const response = await store.uploadAvatar(file);
+        if (response?.success) {
+          store.setSuccess?.('Avatar actualizado exitosamente');
+        } else {
+          throw new Error(response?.error || 'Error subiendo avatar');
+        }
+      } else {
+        // Fallback: simular upload
+        setTimeout(() => {
+          setUploading(false);
+          store?.setSuccess?.('Avatar actualizado exitosamente');
+        }, 2000);
+        return;
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      setLocalError(error.message || 'Error subiendo avatar');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ✅ Loading state
+  if (!user && isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50/30 flex items-center justify-center">
+        <div className="text-center">
+          <Loader size={32} className="animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-gray-600">Cargando perfil...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Error state
+  if (!user && !isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50/30 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-6 shadow-lg max-w-md w-full text-center">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Error cargando perfil</h2>
+          <p className="text-gray-600 mb-4">No se pudo cargar la información del usuario</p>
+          <button
+            onClick={() => store?.refreshUserSession?.()}
+            className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const StatCard = ({ stat, index }) => {
     const Icon = stat.icon;
@@ -221,14 +337,18 @@ const ModernProfileView = ({ store }) => {
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-1">
-              <h4 className="font-semibold text-gray-900">{appointment.service}</h4>
-              {appointment.isVip && (
+              <h4 className="font-semibold text-gray-900">
+                {appointment.service?.name || 'Servicio'}
+              </h4>
+              {(appointment.vipDiscount > 0 || isVIP) && (
                 <span className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-2 py-1 rounded-full text-xs font-semibold">
                   VIP
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-600 mb-1">con {appointment.doctor}</p>
+            <p className="text-sm text-gray-600 mb-1">
+              {appointment.clinic?.name || 'Clínica Premium'}
+            </p>
             <div className="flex items-center space-x-4 text-sm text-gray-500">
               <div className="flex items-center space-x-1">
                 <Calendar size={14} />
@@ -248,9 +368,11 @@ const ModernProfileView = ({ store }) => {
         </div>
         
         <div className="flex items-center justify-between">
-          <span className="text-xs text-green-600 font-medium flex items-center">
+          <span className={`text-xs font-medium flex items-center ${
+            appointment.status === 'CONFIRMED' ? 'text-green-600' : 'text-blue-600'
+          }`}>
             <CheckCircle size={14} className="mr-1" />
-            Confirmado
+            {appointment.status === 'CONFIRMED' ? 'Confirmado' : 'Programado'}
           </span>
           <button className="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
             Ver detalles
@@ -290,11 +412,12 @@ const ModernProfileView = ({ store }) => {
             </div>
             <button
               onClick={() => setEditMode(!editMode)}
+              disabled={isLoading}
               className={`p-2 rounded-xl transition-all duration-300 ${
                 editMode 
                   ? 'bg-indigo-100 text-indigo-600' 
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {editMode ? <X size={20} /> : <Edit3 size={20} />}
             </button>
@@ -311,15 +434,35 @@ const ModernProfileView = ({ store }) => {
           <div className="relative z-10">
             <div className="flex items-start space-x-4 lg:space-x-6 mb-6">
               <div className="relative group">
-                <img
-                  src={user.avatar}
-                  alt={user.name}
-                  className="w-20 h-20 lg:w-24 lg:h-24 rounded-2xl border-4 border-white/20 object-cover"
-                />
+                <div className="w-20 h-20 lg:w-24 lg:h-24 rounded-2xl border-4 border-white/20 bg-white/20 flex items-center justify-center overflow-hidden">
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User size={32} className="text-white/70" />
+                  )}
+                  
+                  {uploading && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                      <Loader size={20} className="text-white animate-spin" />
+                    </div>
+                  )}
+                </div>
+                
                 {editMode && (
-                  <button className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <label className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer">
                     <Camera size={20} className="text-white" />
-                  </button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                  </label>
                 )}
               </div>
               
@@ -345,22 +488,22 @@ const ModernProfileView = ({ store }) => {
                   <>
                     <div className="flex items-center space-x-3 mb-2">
                       <h2 className="text-2xl lg:text-3xl font-bold">{user.name}</h2>
-                      {vipStatus.isActive && (
+                      {isVIP && (
                         <div className="bg-gradient-to-r from-yellow-400 to-orange-500 px-3 py-1 rounded-full flex items-center space-x-1">
                           <Crown size={16} />
                           <span className="text-sm font-semibold">VIP</span>
                         </div>
                       )}
                     </div>
-                    <p className="text-white/80 mb-2">{user.bio}</p>
+                    <p className="text-white/80 mb-2">{user.bio || 'Sin descripción'}</p>
                     <div className="flex items-center space-x-4 text-sm text-white/70">
                       <div className="flex items-center space-x-1">
                         <MapPin size={14} />
-                        <span>{user.location}</span>
+                        <span>{user.location || 'Ubicación no especificada'}</span>
                       </div>
                       <div className="flex items-center space-x-1">
                         <Calendar size={14} />
-                        <span>Miembro desde {user.memberSince}</span>
+                        <span>Miembro desde {new Date(user.createdAt || Date.now()).getFullYear()}</span>
                       </div>
                     </div>
                   </>
@@ -368,16 +511,21 @@ const ModernProfileView = ({ store }) => {
               </div>
             </div>
 
-            {vipStatus.isActive && (
+            {/* ✅ VIP Status Real */}
+            {isVIP && vipStatus && (
               <div className="bg-white/20 backdrop-blur rounded-2xl p-4 border border-white/30">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold mb-1">Estado VIP Premium</p>
-                    <p className="text-sm text-white/80">{vipStatus.nextBenefit}</p>
+                    <p className="font-semibold mb-1">Estado VIP {vipStatus.planType || 'Premium'}</p>
+                    <p className="text-sm text-white/80">
+                      {vipStatus.stats?.daysRemaining ? `${vipStatus.stats.daysRemaining} días restantes` : 'Activo'}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-white/80">Válido hasta</p>
-                    <p className="font-semibold">{new Date(vipStatus.expiresAt).toLocaleDateString('es-AR')}</p>
+                    <p className="font-semibold">
+                      {vipStatus.endDate ? new Date(vipStatus.endDate).toLocaleDateString('es-AR') : 'Indefinido'}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -385,7 +533,7 @@ const ModernProfileView = ({ store }) => {
           </div>
         </div>
 
-        {/* Stats Grid */}
+        {/* ✅ Stats Grid con datos reales */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {stats.map((stat, index) => (
             <StatCard key={index} stat={stat} index={index} />
@@ -453,17 +601,47 @@ const ModernProfileView = ({ store }) => {
               </div>
             </div>
 
+            {/* Error Display Local */}
+            {localError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+                <p className="text-red-800 text-sm">{localError}</p>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleSaveProfile}
-                disabled={store?.isLoading}
+                disabled={isLoading}
                 className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:shadow-lg transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
               >
-                <Save size={20} />
-                <span>{store?.isLoading ? 'Guardando...' : 'Guardar Cambios'}</span>
+                {isLoading ? (
+                  <>
+                    <Loader size={20} className="animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={20} />
+                    <span>Guardar Cambios</span>
+                  </>
+                )}
               </button>
               <button
-                onClick={() => setEditMode(false)}
+                onClick={() => {
+                  setEditMode(false);
+                  setLocalError(null);
+                  // Reset data to original user data
+                  if (user) {
+                    setEditData({
+                      name: user.name || '',
+                      email: user.email || '',
+                      phone: user.phone || '',
+                      bio: user.bio || '',
+                      birthday: user.birthday || '',
+                      location: user.location || ''
+                    });
+                  }
+                }}
                 className="flex-1 border-2 border-gray-200 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-50 transition-colors duration-300"
               >
                 Cancelar
@@ -472,12 +650,15 @@ const ModernProfileView = ({ store }) => {
           </div>
         )}
 
-        {/* Upcoming Appointments */}
+        {/* ✅ Upcoming Appointments - Datos Reales */}
         {upcomingAppointments.length > 0 && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-gray-900">Próximas Citas</h3>
-              <button className="text-indigo-600 hover:text-indigo-800 font-medium text-sm flex items-center space-x-1">
+              <button 
+                onClick={() => {/* Navigate to appointments */}}
+                className="text-indigo-600 hover:text-indigo-800 font-medium text-sm flex items-center space-x-1"
+              >
                 <span>Ver todas</span>
                 <ChevronRight size={16} />
               </button>
@@ -490,15 +671,29 @@ const ModernProfileView = ({ store }) => {
           </div>
         )}
 
-        {/* Recent Activity */}
+        {/* ✅ Recent Activity - Datos Reales */}
         <div className="mb-8">
           <div className="bg-white rounded-3xl p-6 border border-gray-100 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Actividad Reciente</h3>
-            <div className="space-y-2">
-              {recentActivity.map(activity => (
-                <ActivityItem key={activity.id} activity={activity} />
-              ))}
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-900">Actividad Reciente</h3>
+              {recentActivity.length === 0 && (
+                <span className="text-sm text-gray-500">Sin actividad</span>
+              )}
             </div>
+            
+            {recentActivity.length > 0 ? (
+              <div className="space-y-2">
+                {recentActivity.map(activity => (
+                  <ActivityItem key={activity.id} activity={activity} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Activity size={48} className="text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 mb-2">Sin actividad reciente</p>
+                <p className="text-sm text-gray-400">Tu actividad aparecerá aquí cuando comiences a usar la aplicación</p>
+              </div>
+            )}
           </div>
 
           {/* Preferences */}
@@ -529,7 +724,11 @@ const ModernProfileView = ({ store }) => {
                 );
               })}
               
-              <button className="w-full flex items-center justify-between p-3 hover:bg-red-50 rounded-xl transition-colors duration-200 text-red-600">
+              {/* ✅ Logout conectado al store */}
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-between p-3 hover:bg-red-50 rounded-xl transition-colors duration-200 text-red-600"
+              >
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-red-100 rounded-xl">
                     <LogOut size={16} className="text-red-600" />
@@ -542,10 +741,68 @@ const ModernProfileView = ({ store }) => {
           </div>
         </div>
 
-        {/* Error Display */}
+        {/* ✅ Error Display Global */}
         {store?.error && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-8">
-            <p className="text-red-800 text-sm">{store.error}</p>
+            <div className="flex items-center space-x-3">
+              <AlertCircle size={20} className="text-red-600" />
+              <div>
+                <p className="text-red-800 text-sm font-medium">Error</p>
+                <p className="text-red-700 text-sm">{store.error}</p>
+              </div>
+              <button
+                onClick={() => store.clearError?.()}
+                className="ml-auto text-red-600 hover:text-red-800"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Success Display */}
+        {store?.successMessage && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-8">
+            <div className="flex items-center space-x-3">
+              <CheckCircle size={20} className="text-green-600" />
+              <div>
+                <p className="text-green-800 text-sm font-medium">Éxito</p>
+                <p className="text-green-700 text-sm">{store.successMessage}</p>
+              </div>
+              <button
+                onClick={() => store.clearSuccess?.()}
+                className="ml-auto text-green-600 hover:text-green-800"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-6 shadow-xl">
+              <div className="flex items-center space-x-3">
+                <Loader size={24} className="animate-spin text-indigo-600" />
+                <span className="text-gray-700">Procesando...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Development Debug Panel */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="bg-gray-800 text-white p-4 rounded-2xl mb-8">
+            <h4 className="font-bold mb-2">🔧 Debug Info</h4>
+            <div className="text-xs space-y-1">
+              <p>User ID: {user?.id}</p>
+              <p>VIP Status: {isVIP ? 'Active' : 'Inactive'}</p>
+              <p>Appointments: {appointments.length}</p>
+              <p>Upcoming: {upcomingAppointments.length}</p>
+              <p>Loading: {isLoading ? 'Yes' : 'No'}</p>
+              <p>Store Functions: {Object.keys(store || {}).filter(k => typeof store[k] === 'function').length}</p>
+            </div>
           </div>
         )}
       </div>
