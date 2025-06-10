@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Home, Crown, User, Calendar, LogOut } from 'lucide-react';
 
 // Import components
-import Login from './components/Login';
+import Login from './components/login/Login';
 import HomeView from './components/Home/HomeView';
 import AppointmentView from './components/Appointment/AppointmentView';
 import VipView from './components/Vip/VipView';
