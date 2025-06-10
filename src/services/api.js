@@ -7,6 +7,9 @@ class ApiService {
   constructor() {
     this.accessToken = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
     this.refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+    this.requestCount = 0;
+    this.successCount = 0;
+    this.failureCount = 0;
   }
 
   setTokens(accessToken, refreshToken) {
@@ -38,11 +41,17 @@ class ApiService {
       ...options,
     };
 
+    // Track request
+    this.requestCount++;
+    const startTime = Date.now();
+
     try {
       console.log('🔥 Making request to:', url);
       const response = await fetch(url, config);
       
       if (!response.ok) {
+        this.failureCount++;
+        
         if (response.status === 401) {
           // Solo limpiar tokens si NO es un endpoint de login/register
           if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
@@ -58,8 +67,13 @@ class ApiService {
         throw new Error(errorData.error || `Error HTTP: ${response.status}`);
       }
 
+      this.successCount++;
+      const responseTime = Date.now() - startTime;
+      console.log(`✅ Request successful in ${responseTime}ms`);
+      
       return await response.json();
     } catch (error) {
+      this.failureCount++;
       console.error('❌ Request failed for:', url, error.message);
       throw error;
     }
@@ -121,6 +135,30 @@ class ApiService {
     const response = await this.request('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(userData),
+    });
+    return response;
+  }
+
+  async changePassword(currentPassword, newPassword) {
+    const response = await this.request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        currentPassword,
+        newPassword
+      })
+    });
+    return response;
+  }
+
+  async getUserSettings() {
+    const response = await this.request('/auth/settings');
+    return response;
+  }
+
+  async updateUserSettings(settings) {
+    const response = await this.request('/auth/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
     });
     return response;
   }
@@ -331,7 +369,7 @@ class ApiService {
   }
 
   // ===============================
-  // VIP METHODS
+  // VIP METHODS - COMPLETOS
   // ===============================
   async getVipStatus() {
     const response = await this.request('/vip/status');
@@ -367,6 +405,35 @@ class ApiService {
     return response;
   }
 
+  // ✅ Estadísticas VIP detalladas
+  async getVipStats() {
+    const response = await this.request('/vip/stats');
+    return response;
+  }
+
+  // ✅ Actualizar plan VIP
+  async updateVipPlan(planType) {
+    const response = await this.request('/vip/update', {
+      method: 'POST',
+      body: JSON.stringify({ planType })
+    });
+    return response;
+  }
+
+  // ✅ Reactivar suscripción VIP cancelada
+  async reactivateVipSubscription() {
+    const response = await this.request('/vip/reactivate', {
+      method: 'POST'
+    });
+    return response;
+  }
+
+  // ✅ Obtener descuentos VIP disponibles
+  async getVipDiscounts() {
+    const response = await this.request('/vip/discounts');
+    return response;
+  }
+
   // ===============================
   // SERVICES METHODS
   // ===============================
@@ -377,6 +444,22 @@ class ApiService {
 
   async getServiceById(serviceId) {
     const response = await this.request(`/services/${serviceId}`);
+    return response;
+  }
+
+  async getServiceReviews(serviceId, page = 1, limit = 10) {
+    const response = await this.request(`/services/${serviceId}/reviews?page=${page}&limit=${limit}`);
+    return response;
+  }
+
+  async createServiceReview(serviceId, rating, comment) {
+    const response = await this.request(`/services/${serviceId}/reviews`, {
+      method: 'POST',
+      body: JSON.stringify({
+        rating,
+        comment
+      })
+    });
     return response;
   }
 
@@ -436,6 +519,20 @@ class ApiService {
     return response;
   }
 
+  // 🔔 Enviar notificación personalizada
+  async sendCustomNotification(userId, title, message, type = 'info') {
+    const response = await this.request('/notifications/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId,
+        title,
+        message,
+        type
+      })
+    });
+    return response;
+  }
+
   // ===============================
   // CLINIC METHODS
   // ===============================
@@ -446,6 +543,102 @@ class ApiService {
 
   async getClinicMetrics(period = 'month') {
     const response = await this.request(`/clinics/metrics?period=${period}`);
+    return response;
+  }
+
+  // ===============================
+  // FEEDBACK & ANALYTICS METHODS
+  // ===============================
+
+  // 📝 Enviar feedback
+  async submitFeedback(rating, message, category = 'general') {
+    const response = await this.request('/feedback', {
+      method: 'POST',
+      body: JSON.stringify({
+        rating,
+        message,
+        category
+      })
+    });
+    return response;
+  }
+
+  // 📊 Obtener métricas de usuario
+  async getUserAnalytics(period = 'month') {
+    const response = await this.request(`/analytics/user?period=${period}`);
+    return response;
+  }
+
+  // 📈 Tracking de eventos
+  async trackEvent(eventName, properties = {}) {
+    const response = await this.request('/analytics/track', {
+      method: 'POST',
+      body: JSON.stringify({
+        event: eventName,
+        properties: {
+          ...properties,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          url: window.location.href
+        }
+      })
+    });
+    return response;
+  }
+
+  // ===============================
+  // PROMOTIONS METHODS
+  // ===============================
+
+  // 🎁 Obtener promociones activas
+  async getActivePromotions() {
+    const response = await this.request('/promotions/active');
+    return response;
+  }
+
+  // 🎫 Aplicar código promocional
+  async applyPromotionCode(code, serviceId = null) {
+    const response = await this.request('/promotions/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+        serviceId
+      })
+    });
+    return response;
+  }
+
+  // ===============================
+  // FILE UPLOAD METHODS
+  // ===============================
+
+  // 📤 Upload genérico de archivos
+  async uploadFile(file, type = 'general') {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    
+    const response = await this.request('/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // No incluir Content-Type para FormData
+        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` })
+      }
+    });
+    return response;
+  }
+
+  // 🖼️ Actualizar foto de perfil
+  async updateProfilePicture(formData) {
+    const response = await this.request('/auth/profile/picture', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // No incluir Content-Type para FormData
+        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` })
+      }
+    });
     return response;
   }
 
@@ -514,6 +707,15 @@ class ApiService {
     };
   }
 
+  // 📊 Rate limiting helper
+  getRateLimitStatus() {
+    return {
+      canMakeRequest: true, // Simplified - real implementation would check actual limits
+      requestsRemaining: 100,
+      resetTime: Date.now() + 60000
+    };
+  }
+
   // ===============================
   // CONNECTION & HEALTH METHODS
   // ===============================
@@ -548,6 +750,53 @@ class ApiService {
     } catch (error) {
       console.error('❌ Connection test failed:', error);
       return { success: false, message: error.message };
+    }
+  }
+
+  // ✅ Verificación completa de conectividad
+  async fullConnectionTest() {
+    try {
+      console.log('🧪 Running full connection test...');
+      
+      const tests = [
+        { name: 'Health Check', test: () => this.healthCheck() },
+        { name: 'Authentication', test: () => this.isAuthenticated() },
+        { name: 'User Profile', test: () => this.getCurrentUser() },
+        { name: 'Services', test: () => this.getServices() },
+        { name: 'VIP Status', test: () => this.getVipStatus() }
+      ];
+      
+      const results = {};
+      
+      for (const test of tests) {
+        try {
+          console.log(`Testing ${test.name}...`);
+          const result = await test.test();
+          results[test.name] = { success: true, data: result };
+          console.log(`✅ ${test.name} passed`);
+        } catch (error) {
+          results[test.name] = { success: false, error: error.message };
+          console.log(`❌ ${test.name} failed:`, error.message);
+        }
+      }
+      
+      const successCount = Object.values(results).filter(r => r.success).length;
+      const totalCount = Object.keys(results).length;
+      
+      console.log(`🎯 Connection test completed: ${successCount}/${totalCount} passed`);
+      
+      return {
+        success: successCount === totalCount,
+        results,
+        summary: `${successCount}/${totalCount} tests passed`
+      };
+    } catch (error) {
+      console.error('❌ Full connection test failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        summary: 'Connection test failed'
+      };
     }
   }
 
@@ -599,14 +848,22 @@ class ApiService {
 
   // 📊 Método para obtener estadísticas de uso de API
   getApiUsageStats() {
-    // En un entorno real, esto podría trackear llamadas a API
     return {
-      totalRequests: 0,
-      successfulRequests: 0,
-      failedRequests: 0,
+      totalRequests: this.requestCount,
+      successfulRequests: this.successCount,
+      failedRequests: this.failureCount,
+      successRate: this.requestCount > 0 ? ((this.successCount / this.requestCount) * 100).toFixed(2) + '%' : '0%',
       averageResponseTime: 0,
-      lastRequestTime: null
+      lastRequestTime: new Date().toISOString()
     };
+  }
+
+  // 🔄 Reset stats
+  resetApiStats() {
+    this.requestCount = 0;
+    this.successCount = 0;
+    this.failureCount = 0;
+    console.log('📊 API stats reset');
   }
 }
 

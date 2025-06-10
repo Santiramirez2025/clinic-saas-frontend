@@ -16,7 +16,10 @@ import {
   ChevronRight,
   X,
   CreditCard,
-  Lock
+  Lock,
+  AlertCircle,
+  CheckCircle,
+  Loader
 } from 'lucide-react';
 
 const ModernVipView = ({ store }) => {
@@ -24,9 +27,33 @@ const ModernVipView = ({ store }) => {
   const [selectedPlan, setSelectedPlan] = useState('annual');
   const [activeTab, setActiveTab] = useState('benefits');
   const [isScrolled, setIsScrolled] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const isVIP = store?.vipStatus?.isActive || false;
-  const vipExpiresAt = store?.vipStatus?.expiresAt;
+  // ✅ Datos reales del backend
+  const vipStatus = store?.vipStatus || {};
+  const isVIP = store?.isVipActive?.() || false;
+  const vipData = vipStatus?.subscription || {};
+  const vipStats = vipStatus?.stats || {};
+  
+  // ✅ Calcular días restantes
+  const vipDaysRemaining = store?.getVipDaysRemaining?.() || 0;
+  const vipExpiresAt = vipData?.endDate || null;
+
+  // ✅ Cargar datos VIP al montar componente
+  useEffect(() => {
+    const loadVipData = async () => {
+      try {
+        if (store?.refreshUserSession) {
+          await store.refreshUserSession();
+        }
+      } catch (error) {
+        console.error('Error loading VIP data:', error);
+      }
+    };
+
+    loadVipData();
+  }, []);
 
   // Scroll handler for header effects
   useEffect(() => {
@@ -37,48 +64,55 @@ const ModernVipView = ({ store }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // ✅ Beneficios VIP del backend o fallback
   const vipBenefits = [
     {
       icon: Star,
       title: 'Descuentos Exclusivos',
       description: 'Hasta 25% OFF en todos nuestros servicios premium',
       highlight: '25% OFF',
-      color: 'from-yellow-400 to-orange-500'
+      color: 'from-yellow-400 to-orange-500',
+      active: isVIP
     },
     {
       icon: Calendar,
       title: 'Reservas Prioritarias',
       description: 'Acceso preferencial a los mejores horarios disponibles',
       highlight: 'Prioridad VIP',
-      color: 'from-blue-400 to-indigo-500'
+      color: 'from-blue-400 to-indigo-500',
+      active: isVIP
     },
     {
       icon: Gift,
       title: 'Consultas Gratuitas',
       description: 'Evaluaciones completas sin costo adicional',
       highlight: 'Sin costo',
-      color: 'from-green-400 to-emerald-500'
+      color: 'from-green-400 to-emerald-500',
+      active: isVIP
     },
     {
       icon: Zap,
       title: 'Tratamientos Premium',
       description: 'Tecnología de última generación exclusiva para VIP',
       highlight: 'Exclusivo',
-      color: 'from-purple-400 to-pink-500'
+      color: 'from-purple-400 to-pink-500',
+      active: isVIP
     },
     {
       icon: Heart,
       title: 'Seguimiento Personalizado',
       description: 'Plan de cuidado diseñado especialmente para ti',
       highlight: 'Personalizado',
-      color: 'from-red-400 to-pink-500'
+      color: 'from-red-400 to-pink-500',
+      active: isVIP
     },
     {
       icon: Users,
       title: 'Comunidad Exclusiva',
       description: 'Eventos especiales y talleres para miembros VIP',
       highlight: 'Solo VIP',
-      color: 'from-teal-400 to-cyan-500'
+      color: 'from-teal-400 to-cyan-500',
+      active: isVIP
     }
   ];
 
@@ -112,31 +146,125 @@ const ModernVipView = ({ store }) => {
     }
   ];
 
+  // ✅ Estadísticas reales del backend
   const stats = [
-    { label: 'Ahorro promedio', value: '$3,200', icon: TrendingUp, color: 'text-green-500' },
-    { label: 'Servicios este mes', value: '8', icon: Calendar, color: 'text-blue-500' },
-    { label: 'Días VIP', value: '127', icon: Crown, color: 'text-yellow-500' },
-    { label: 'Satisfacción', value: '98%', icon: Heart, color: 'text-red-500' }
+    { 
+      label: 'Ahorro total', 
+      value: vipStats?.totalSavings ? `$${vipStats.totalSavings.toLocaleString()}` : '$0', 
+      icon: TrendingUp, 
+      color: 'text-green-500' 
+    },
+    { 
+      label: 'Servicios este mes', 
+      value: vipStats?.appointmentsThisMonth?.toString() || '0', 
+      icon: Calendar, 
+      color: 'text-blue-500' 
+    },
+    { 
+      label: 'Días VIP restantes', 
+      value: vipDaysRemaining?.toString() || '0', 
+      icon: Crown, 
+      color: 'text-yellow-500' 
+    },
+    { 
+      label: 'Citas completadas', 
+      value: vipStats?.completedAppointments?.toString() || '0', 
+      icon: Heart, 
+      color: 'text-red-500' 
+    }
   ];
 
+  // ✅ Función real para suscribirse a VIP
   const handleSubscribeVIP = async () => {
+    if (!store?.subscribeVip) {
+      setError('Función de suscripción no disponible');
+      return;
+    }
+
+    setLoading(true);
     setShowPayment(true);
-    // Simulate payment processing
-    setTimeout(() => {
-      // Mock successful subscription
-      setShowPayment(false);
-      // Here you would call store.subscribeVip()
-    }, 3000);
+    setError(null);
+
+    try {
+      console.log('🔄 Subscribing to VIP:', selectedPlan);
+      const response = await store.subscribeVip(selectedPlan);
+      
+      if (response?.success) {
+        console.log('✅ VIP subscription successful');
+        store.setSuccess('¡Suscripción VIP activada exitosamente!');
+        
+        // Refresh data after successful subscription
+        setTimeout(async () => {
+          if (store.refreshUserSession) {
+            await store.refreshUserSession();
+          }
+        }, 1000);
+      } else {
+        throw new Error(response?.error || 'Error en la suscripción');
+      }
+    } catch (error) {
+      console.error('❌ VIP subscription failed:', error);
+      setError(error.message || 'Error al procesar la suscripción');
+      store?.setError?.(error.message || 'Error al procesar la suscripción');
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        setShowPayment(false);
+      }, 2000);
+    }
   };
 
+  // ✅ Función real para cancelar VIP
   const handleUnsubscribe = async () => {
-    if (window.confirm('¿Estás segura de que quieres cancelar tu plan VIP?')) {
-      try {
-        // await store.unsubscribeVip();
-        console.log('Unsubscribing...');
-      } catch (error) {
-        console.error('Error unsubscribing from VIP:', error);
+    if (!store?.cancelVipSubscription) {
+      setError('Función de cancelación no disponible');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      '¿Estás segura de que quieres cancelar tu plan VIP? Perderás todos los beneficios al final del período actual.'
+    );
+
+    if (!confirmed) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔄 Canceling VIP subscription');
+      const response = await store.cancelVipSubscription('User requested cancellation');
+      
+      if (response?.success) {
+        console.log('✅ VIP cancellation successful');
+        store.setSuccess('Suscripción VIP cancelada exitosamente');
+        
+        // Refresh data after cancellation
+        if (store.refreshUserSession) {
+          await store.refreshUserSession();
+        }
+      } else {
+        throw new Error(response?.error || 'Error en la cancelación');
       }
+    } catch (error) {
+      console.error('❌ VIP cancellation failed:', error);
+      setError(error.message || 'Error al cancelar la suscripción');
+      store?.setError?.(error.message || 'Error al cancelar la suscripción');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Formatear fecha de expiración
+  const formatExpirationDate = (dateString) => {
+    if (!dateString) return 'No definida';
+    try {
+      return new Date(dateString).toLocaleDateString('es-AR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric'
+      });
+    } catch {
+      return 'Fecha inválida';
     }
   };
 
@@ -144,7 +272,11 @@ const ModernVipView = ({ store }) => {
     const Icon = benefit.icon;
     return (
       <div 
-        className="group relative bg-white rounded-2xl lg:rounded-3xl p-4 lg:p-6 border border-gray-100 hover:border-gray-200 transition-all duration-500 hover:shadow-xl hover:shadow-gray-100/50 hover:-translate-y-1 w-full"
+        className={`group relative bg-white rounded-2xl lg:rounded-3xl p-4 lg:p-6 border transition-all duration-500 hover:shadow-xl hover:shadow-gray-100/50 hover:-translate-y-1 w-full ${
+          benefit.active 
+            ? 'border-green-200 bg-gradient-to-br from-green-50 to-emerald-50' 
+            : 'border-gray-100 hover:border-gray-200'
+        }`}
         style={{ animationDelay: `${index * 100}ms` }}
       >
         <div className="flex items-start space-x-3 lg:space-x-4 w-full">
@@ -162,9 +294,11 @@ const ModernVipView = ({ store }) => {
               {benefit.highlight}
             </div>
           </div>
-          {isVIP && (
-            <div className="absolute top-3 lg:top-4 right-3 lg:right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <Check size={16} className="text-green-500 lg:w-5 lg:h-5" />
+          {benefit.active && (
+            <div className="absolute top-3 lg:top-4 right-3 lg:right-4">
+              <div className="bg-green-500 text-white rounded-full p-1">
+                <Check size={12} />
+              </div>
             </div>
           )}
         </div>
@@ -176,9 +310,7 @@ const ModernVipView = ({ store }) => {
     return (
       <div
         className={`relative cursor-pointer transition-all duration-300 ${
-          isSelected
-            ? 'scale-105 z-10'
-            : 'hover:scale-102'
+          isSelected ? 'scale-105 z-10' : 'hover:scale-102'
         }`}
         onClick={onSelect}
       >
@@ -254,6 +386,18 @@ const ModernVipView = ({ store }) => {
     );
   };
 
+  // ✅ Loading state mientras carga datos
+  if (store?.isLoading && !vipStatus) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50/30 flex items-center justify-center">
+        <div className="text-center">
+          <Loader size={40} className="text-indigo-600 mx-auto mb-4 animate-spin" />
+          <p className="text-gray-600">Cargando información VIP...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50/30">
       {/* Floating Header */}
@@ -285,6 +429,11 @@ const ModernVipView = ({ store }) => {
                 <div className="bg-gradient-to-r from-green-400 to-emerald-500 text-white px-3 py-1 rounded-full text-sm font-semibold">
                   ✨ Activo
                 </div>
+                {vipDaysRemaining > 0 && vipDaysRemaining <= 30 && (
+                  <div className="bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-semibold">
+                    {vipDaysRemaining}d restantes
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -292,6 +441,25 @@ const ModernVipView = ({ store }) => {
       </div>
 
       <div className="max-w-4xl mx-auto p-4 pb-8">
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="text-red-500" size={20} />
+              <div>
+                <p className="font-semibold text-red-900">Error</p>
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="ml-auto text-red-500 hover:text-red-700"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* VIP Stats Dashboard */}
         {isVIP && (
           <div className="mb-8">
@@ -376,12 +544,12 @@ const ModernVipView = ({ store }) => {
             <div className="mt-8 text-center">
               <button
                 onClick={handleSubscribeVIP}
-                disabled={showPayment}
+                disabled={loading || showPayment}
                 className="group relative bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-4 rounded-2xl font-semibold text-lg shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 min-w-64"
               >
-                {showPayment ? (
+                {loading ? (
                   <div className="flex items-center justify-center space-x-2">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <Loader size={20} className="animate-spin" />
                     <span>Procesando...</span>
                   </div>
                 ) : (
@@ -411,8 +579,17 @@ const ModernVipView = ({ store }) => {
                   <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                   <span className="font-semibold text-green-800">Plan Activo</span>
                 </div>
-                <p className="text-2xl font-bold text-gray-900 mb-1">Plan Anual VIP</p>
-                <p className="text-green-700">Válido hasta: {vipExpiresAt ? new Date(vipExpiresAt).toLocaleDateString('es-AR') : '06/06/2026'}</p>
+                <p className="text-2xl font-bold text-gray-900 mb-1">
+                  Plan {vipData?.planType === 'annual' ? 'Anual' : 'Mensual'} VIP
+                </p>
+                <p className="text-green-700">
+                  Válido hasta: {formatExpirationDate(vipExpiresAt)}
+                </p>
+                {vipDaysRemaining <= 30 && vipDaysRemaining > 0 && (
+                  <div className="mt-2 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    ⚠️ Quedan {vipDaysRemaining} días
+                  </div>
+                )}
               </div>
 
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200">
@@ -420,22 +597,35 @@ const ModernVipView = ({ store }) => {
                   <TrendingUp size={20} className="text-blue-600" />
                   <span className="font-semibold text-blue-800">Ahorro Total</span>
                 </div>
-                <p className="text-2xl font-bold text-gray-900 mb-1">$6,890</p>
-                <p className="text-blue-700">En los últimos 6 meses</p>
+                <p className="text-2xl font-bold text-gray-900 mb-1">
+                  {vipStats?.totalSavings ? `${vipStats.totalSavings.toLocaleString()}` : '$0'}
+                </p>
+                <p className="text-blue-700">Desde que eres VIP</p>
               </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <button className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-6 rounded-2xl font-semibold hover:shadow-lg transition-all duration-300 hover:scale-105">
+              <button 
+                className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-6 rounded-2xl font-semibold hover:shadow-lg transition-all duration-300 hover:scale-105"
+                disabled={loading}
+              >
                 <CreditCard size={20} className="inline mr-2" />
                 Actualizar Método de Pago
               </button>
               
               <button
                 onClick={handleUnsubscribe}
-                className="flex-1 border-2 border-red-200 text-red-600 py-3 px-6 rounded-2xl font-semibold hover:bg-red-50 transition-all duration-300"
+                disabled={loading}
+                className="flex-1 border-2 border-red-200 text-red-600 py-3 px-6 rounded-2xl font-semibold hover:bg-red-50 transition-all duration-300 disabled:opacity-50"
               >
-                Cancelar Suscripción
+                {loading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <Loader size={16} className="animate-spin" />
+                    <span>Procesando...</span>
+                  </div>
+                ) : (
+                  'Cancelar Suscripción'
+                )}
               </button>
             </div>
           </div>
@@ -447,16 +637,40 @@ const ModernVipView = ({ store }) => {
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
               <div className="text-center">
                 <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Shield size={32} className="text-white" />
+                  {loading ? (
+                    <Loader size={32} className="text-white animate-spin" />
+                  ) : (
+                    <CheckCircle size={32} className="text-white" />
+                  )}
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Procesando Pago</h3>
-                <p className="text-gray-600 mb-6">Conectando con pasarela segura...</p>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  {loading ? 'Procesando Pago' : '¡Pago Procesado!'}
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  {loading 
+                    ? 'Conectando con pasarela segura...' 
+                    : 'Tu suscripción VIP ha sido activada exitosamente'
+                  }
+                </p>
                 
-                <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-                  <div className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
-                </div>
+                {loading && (
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                    <div className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                  </div>
+                )}
                 
-                <p className="text-sm text-gray-500">🔒 Tu información está protegida con encriptación de nivel bancario</p>
+                <p className="text-sm text-gray-500">
+                  🔒 {loading ? 'Tu información está protegida con encriptación de nivel bancario' : 'Bienvenida al club VIP'}
+                </p>
+                
+                {!loading && (
+                  <button
+                    onClick={() => setShowPayment(false)}
+                    className="mt-4 w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-2 px-4 rounded-2xl font-semibold hover:shadow-lg transition-all duration-300"
+                  >
+                    Continuar
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -475,8 +689,10 @@ const ModernVipView = ({ store }) => {
               <p className="text-gray-700 font-medium">Satisfacción garantizada</p>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-green-600 mb-2">$3,200</div>
-              <p className="text-gray-700 font-medium">Ahorro promedio anual</p>
+              <div className="text-3xl font-bold text-green-600 mb-2">
+                {vipStats?.totalSavings ? `${Math.round(vipStats.totalSavings / 12).toLocaleString()}` : '$3,200'}
+              </div>
+              <p className="text-gray-700 font-medium">Ahorro promedio mensual</p>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-purple-600 mb-2">24/7</div>
@@ -484,6 +700,41 @@ const ModernVipView = ({ store }) => {
             </div>
           </div>
         </div>
+
+        {/* Success Message for VIP users */}
+        {isVIP && vipStats?.totalSavings > 0 && (
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-3xl p-6 mt-8 border border-green-200">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Star size={24} className="text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-green-900 mb-2">
+                ¡Excelente decisión! 🎉
+              </h3>
+              <p className="text-green-700">
+                Has ahorrado <span className="font-bold">${vipStats.totalSavings.toLocaleString()}</span> siendo miembro VIP.
+                Sigue disfrutando de todos los beneficios exclusivos.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Debug info for development */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 bg-gray-100 rounded-2xl p-4">
+            <h4 className="font-bold text-gray-900 mb-2">Debug Info (Development)</h4>
+            <pre className="text-xs text-gray-600 overflow-auto">
+              {JSON.stringify({
+                isVIP,
+                vipStatus: vipStatus,
+                vipDaysRemaining,
+                vipExpiresAt,
+                hasSubscribeFunction: !!store?.subscribeVip,
+                hasCancelFunction: !!store?.cancelVipSubscription
+              }, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );

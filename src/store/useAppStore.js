@@ -1,4 +1,4 @@
-// store/useAppStore.js - ACTUALIZADO PARA BACKEND EN RENDER
+// store/useAppStore.js - COMPLETO CON FUNCIONES VIP
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ApiService from '../services/api.js';
 
@@ -578,6 +578,45 @@ const useAppStore = () => {
     }
   }, [setLoading, clearError, setSuccess, setError]);
 
+  const updateAppointment = useCallback(async (appointmentId, updates) => {
+    if (!rateLimiter.canMakeRequest('update-appointment')) {
+      throw new Error('Demasiadas solicitudes. Espera un momento.');
+    }
+
+    try {
+      setLoading(true);
+      clearError();
+      
+      console.log('✏️ Updating appointment...', appointmentId, updates);
+      const response = await api.updateAppointment(appointmentId, updates);
+      
+      if (response.success && mountedRef.current) {
+        const updatedAppointment = response.data.appointment;
+        setState(prev => ({
+          ...prev,
+          appointments: prev.appointments.map(apt => 
+            apt.id === appointmentId ? updatedAppointment : apt
+          )
+        }));
+        
+        dataCache.current.lastUpdate = 0;
+        setSuccess('Cita actualizada exitosamente');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('❌ Failed to update appointment:', error);
+      if (mountedRef.current) {
+        setError(error);
+      }
+      throw error;
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [setLoading, clearError, setSuccess, setError]);
+
   const cancelAppointment = useCallback(async (appointmentId, reason = 'Usuario canceló') => {
     try {
       setLoading(true);
@@ -612,6 +651,29 @@ const useAppStore = () => {
     }
   }, [setLoading, clearError, setSuccess, setError]);
 
+  const sendAppointmentReminder = useCallback(async (appointmentId) => {
+    if (!rateLimiter.canMakeRequest('send-reminder')) {
+      throw new Error('Demasiadas solicitudes. Espera un momento.');
+    }
+
+    try {
+      console.log('📧 Sending appointment reminder...', appointmentId);
+      const response = await api.sendAppointmentReminder(appointmentId);
+      
+      if (response.success) {
+        setSuccess('Recordatorio enviado exitosamente');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('❌ Failed to send reminder:', error);
+      if (mountedRef.current) {
+        setError(error);
+      }
+      throw error;
+    }
+  }, [setSuccess, setError]);
+
   const getAvailableSlots = useCallback(async (date, serviceId) => {
     try {
       console.log('🕐 Getting available slots for:', date, serviceId);
@@ -626,8 +688,12 @@ const useAppStore = () => {
     }
   }, []);
 
-  // ✅ VIP functions ACTUALIZADAS
+  // ✅ VIP functions COMPLETAS
   const subscribeVip = useCallback(async (planType = 'monthly') => {
+    if (!rateLimiter.canMakeRequest('vip-subscribe')) {
+      throw new Error('Demasiadas solicitudes. Espera un momento.');
+    }
+
     try {
       setLoading(true);
       clearError();
@@ -642,8 +708,20 @@ const useAppStore = () => {
           user: { ...prev.user, isVIP: true }
         }));
         
+        // Invalidar cache para forzar recarga
         dataCache.current.lastUpdate = 0;
+        
         setSuccess('¡Suscripción VIP activada exitosamente!');
+        
+        // Recargar datos después de la suscripción
+        const userId = currentUserIdRef.current;
+        if (userId) {
+          setTimeout(() => {
+            if (mountedRef.current) {
+              loadUserData(userId, true);
+            }
+          }, 1000);
+        }
       }
       
       return response;
@@ -658,7 +736,145 @@ const useAppStore = () => {
         setLoading(false);
       }
     }
-  }, [setLoading, clearError, setSuccess, setError]);
+  }, [setLoading, clearError, setSuccess, setError, loadUserData]);
+
+  const cancelVipSubscription = useCallback(async (reason = 'User request') => {
+    if (!rateLimiter.canMakeRequest('vip-cancel')) {
+      throw new Error('Demasiadas solicitudes. Espera un momento.');
+    }
+
+    try {
+      setLoading(true);
+      clearError();
+      
+      console.log('❌ Canceling VIP subscription');
+      const response = await api.cancelVipSubscription(reason);
+      
+      if (response.success && mountedRef.current) {
+        setState(prev => ({ 
+          ...prev, 
+          vipStatus: null,
+          user: { ...prev.user, isVIP: false }
+        }));
+        
+        // Invalidar cache
+        dataCache.current.lastUpdate = 0;
+        
+        setSuccess('Suscripción VIP cancelada exitosamente');
+        
+        // Recargar datos después de la cancelación
+        const userId = currentUserIdRef.current;
+        if (userId) {
+          setTimeout(() => {
+            if (mountedRef.current) {
+              loadUserData(userId, true);
+            }
+          }, 1000);
+        }
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('❌ Failed to cancel VIP subscription:', error);
+      if (mountedRef.current) {
+        setError(error);
+      }
+      throw error;
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [setLoading, clearError, setSuccess, setError, loadUserData]);
+
+  // ✅ Obtener beneficios VIP
+  const getVipBenefits = useCallback(async () => {
+    try {
+      console.log('🎁 Getting VIP benefits');
+      const response = await api.getVipBenefits();
+      if (response.success) {
+        return response.data.benefits || [];
+      }
+      return [];
+    } catch (error) {
+      console.error('❌ Error getting VIP benefits:', error);
+      return [];
+    }
+  }, []);
+
+  // ✅ Obtener historial VIP
+  const getVipHistory = useCallback(async () => {
+    try {
+      console.log('📜 Getting VIP history');
+      const response = await api.getVipHistory();
+      if (response.success) {
+        return response.data.history || [];
+      }
+      return [];
+    } catch (error) {
+      console.error('❌ Error getting VIP history:', error);
+      return [];
+    }
+  }, []);
+
+  // ✅ Utility functions VIP MEJORADAS
+  const isVipActive = useCallback(() => {
+    return state.vipStatus?.isVIP || state.user?.isVIP || false;
+  }, [state.vipStatus?.isVIP, state.user?.isVIP]);
+
+  const getVipDaysRemaining = useCallback(() => {
+    // Opción 1: Desde stats del backend
+    if (state.vipStatus?.stats?.daysRemaining) {
+      return Math.max(0, state.vipStatus.stats.daysRemaining);
+    }
+    
+    // Opción 2: Calcular desde endDate
+    if (state.vipStatus?.subscription?.endDate) {
+      const endDate = new Date(state.vipStatus.subscription.endDate);
+      const now = new Date();
+      const diffTime = endDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return Math.max(0, diffDays);
+    }
+    
+    return 0;
+  }, [state.vipStatus?.stats?.daysRemaining, state.vipStatus?.subscription?.endDate]);
+
+  const getVipStats = useCallback(() => {
+    return state.vipStatus?.stats || {
+      totalSavings: 0,
+      appointmentsThisMonth: 0,
+      daysRemaining: 0,
+      completedAppointments: 0
+    };
+  }, [state.vipStatus?.stats]);
+
+  const getVipSubscription = useCallback(() => {
+    return state.vipStatus?.subscription || null;
+  }, [state.vipStatus?.subscription]);
+
+  // ✅ Verificar si el usuario puede acceder a beneficios VIP
+  const canAccessVipBenefit = useCallback((benefitType) => {
+    const isActive = isVipActive();
+    const daysRemaining = getVipDaysRemaining();
+    
+    switch (benefitType) {
+      case 'discounts':
+        return isActive && daysRemaining > 0;
+      case 'priority_booking':
+        return isActive && daysRemaining > 0;
+      case 'free_consultations':
+        return isActive && daysRemaining > 0;
+      case 'premium_treatments':
+        return isActive && daysRemaining > 0;
+      case 'personal_followup':
+        return isActive && daysRemaining > 0;
+      case 'exclusive_community':
+        return isActive && daysRemaining > 0;
+      default:
+        return isActive && daysRemaining > 0;
+    }
+  }, [isVipActive, getVipDaysRemaining]);
 
   // ✅ Utility functions ACTUALIZADAS
   const getPendingAppointments = useCallback(() => {
@@ -685,15 +901,6 @@ const useAppStore = () => {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     return completed.length > 0 ? completed[0] : null;
   }, [state.appointments]);
-
-  const isVipActive = useCallback(() => {
-    return state.vipStatus?.isVIP || state.user?.isVIP || false;
-  }, [state.vipStatus?.isVIP, state.user?.isVIP]);
-
-  const getVipDaysRemaining = useCallback(() => {
-    if (!state.vipStatus?.stats?.daysRemaining) return 0;
-    return Math.max(0, state.vipStatus.stats.daysRemaining);
-  }, [state.vipStatus?.stats?.daysRemaining]);
 
   // ✅ Initialize on mount
   useEffect(() => {
@@ -748,18 +955,20 @@ const useAppStore = () => {
         userId: state.user?.id,
         appointmentsCount: state.appointments?.length || 0,
         servicesCount: state.services?.length || 0,
+        isVIP: isVipActive(),
+        vipDaysRemaining: getVipDaysRemaining(),
         isLoading: state.isLoading,
         mounted: mountedRef.current
       });
     }
-  }, [state.isAuthenticated, state.user?.id, state.appointments?.length, state.services?.length, state.isLoading]);
+  }, [state.isAuthenticated, state.user?.id, state.appointments?.length, state.services?.length, state.isLoading, isVipActive, getVipDaysRemaining]);
 
-  // ✅ RETURN COMPLETO
+  // ✅ RETURN COMPLETO CON TODAS LAS FUNCIONES VIP
   return { 
-    // State
+    // ✅ State
     ...state,
     
-    // Auth functions
+    // ✅ Auth functions
     login,
     register,
     logout,
@@ -767,26 +976,36 @@ const useAppStore = () => {
     refreshUserSession,
     testBackendConnection,
     
-    // Data functions
+    // ✅ Data functions
     loadUserData,
     
-    // Appointment functions
+    // ✅ Appointment functions COMPLETAS
     addAppointment,
+    updateAppointment,
     cancelAppointment,
+    sendAppointmentReminder,
     getAvailableSlots,
     
-    // VIP functions
+    // ✅ VIP functions COMPLETAS
     subscribeVip,
+    cancelVipSubscription,
+    getVipBenefits,
+    getVipHistory,
     
-    // Utility functions
+    // ✅ VIP utility functions
+    isVipActive,
+    getVipDaysRemaining,
+    getVipStats,
+    getVipSubscription,
+    canAccessVipBenefit,
+    
+    // ✅ Appointment utility functions
     getUpcomingAppointments,
     getPendingAppointments,
     getNextAppointment,
     getLastCompletedAppointment,
-    isVipActive,
-    getVipDaysRemaining,
     
-    // Error/Success handling
+    // ✅ Error/Success handling
     setError,
     clearError,
     setSuccess,
