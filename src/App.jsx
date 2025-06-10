@@ -5,7 +5,7 @@ import { Home, Crown, User, Calendar, LogOut } from 'lucide-react';
 // Import components
 import Login from './components/Login';
 import HomeView from './components/Home/HomeView';
-import AppointmentView from './components/AppointmentView';
+import AppointmentView from './components/Appointment/AppointmentView';
 import VipView from './components/VipView';
 import ProfileView from './components/ProfileView';
 import TabBar from './components/TabBar';
