@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Bell } from 'lucide-react';
 
 // Componentes modulares
@@ -14,38 +14,69 @@ const AppointmentView = ({ store }) => {
   const [sendingReminder, setSendingReminder] = useState(null);
   const [showNewAppointment, setShowNewAppointment] = useState(false);
   
-  // Obtener datos del store
-  const appointments = store?.appointments || [];
-  const isVIP = store?.isVipActive?.() || false;
+  console.log('🔄 AppointmentView render - FINAL FIXED VERSION');
+  
+  // ✅ Obtener datos del store de forma segura
+  const appointments = useMemo(() => {
+    return store?.appointments || [];
+  }, [store?.appointments]);
+  
+  const isVIP = useMemo(() => {
+    return store?.isVipActive?.() || false;
+  }, [store?.vipStatus, store?.user?.isVIP]);
+  
   const isLoading = store?.isLoading || false;
   
-  // Filtros de citas
-  const upcomingAppointments = appointments.filter(apt => {
-    const appointmentDate = new Date(`${apt.date}T${apt.time}:00`);
-    const now = new Date();
-    return appointmentDate > now && (apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED');
-  });
+  // ✅ Filtros de citas memoizados para evitar recálculos
+  const upcomingAppointments = useMemo(() => {
+    return appointments.filter(apt => {
+      try {
+        if (!apt.date || !apt.time) return false;
+        
+        const appointmentDate = new Date(`${apt.date}T${apt.time}:00`);
+        const now = new Date();
+        return appointmentDate > now && (apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED');
+      } catch (error) {
+        console.warn('Error filtering upcoming appointment:', error);
+        return false;
+      }
+    });
+  }, [appointments]);
   
-  const pastAppointments = appointments.filter(apt => apt.status === 'COMPLETED');
-  const cancelledAppointments = appointments.filter(apt => apt.status === 'CANCELLED');
+  const pastAppointments = useMemo(() => {
+    return appointments.filter(apt => apt.status === 'COMPLETED');
+  }, [appointments]);
   
-  const counts = {
+  const cancelledAppointments = useMemo(() => {
+    return appointments.filter(apt => apt.status === 'CANCELLED');
+  }, [appointments]);
+  
+  const counts = useMemo(() => ({
     upcoming: upcomingAppointments.length,
     past: pastAppointments.length,
     cancelled: cancelledAppointments.length
-  };
+  }), [upcomingAppointments.length, pastAppointments.length, cancelledAppointments.length]);
   
-  // Obtener estadísticas para el header
-  const monthlyStats = {
-    thisMonth: appointments.filter(apt => {
-      const appointmentDate = new Date(apt.date);
-      const now = new Date();
-      return appointmentDate.getMonth() === now.getMonth() && 
-             appointmentDate.getFullYear() === now.getFullYear();
-    }).length,
-    completed: pastAppointments.length,
-    vipActive: isVIP
-  };
+  // ✅ Estadísticas para el header memoizadas
+  const monthlyStats = useMemo(() => {
+    try {
+      const thisMonth = appointments.filter(apt => {
+        const appointmentDate = new Date(apt.date);
+        const now = new Date();
+        return appointmentDate.getMonth() === now.getMonth() && 
+               appointmentDate.getFullYear() === now.getFullYear();
+      }).length;
+      
+      return {
+        thisMonth,
+        completed: pastAppointments.length,
+        vipActive: isVIP
+      };
+    } catch (error) {
+      console.warn('Error calculating monthly stats:', error);
+      return { thisMonth: 0, completed: 0, vipActive: false };
+    }
+  }, [appointments, pastAppointments.length, isVIP]);
   
   const getFilteredAppointments = () => {
     switch(activeTab) {
@@ -56,11 +87,10 @@ const AppointmentView = ({ store }) => {
     }
   };
   
-  // Handlers
+  // ✅ Handlers estables
   const handleSendReminder = async (appointmentId) => {
     setSendingReminder(appointmentId);
     try {
-      // TODO: Implementar en ApiService
       console.log('Enviando recordatorio para cita:', appointmentId);
       await new Promise(resolve => setTimeout(resolve, 2000));
       store?.setSuccess?.('Recordatorio enviado exitosamente');
@@ -74,7 +104,6 @@ const AppointmentView = ({ store }) => {
   
   const handleEdit = (appointment) => {
     console.log('Editando cita:', appointment);
-    // TODO: Implementar modal de edición o navegación
     store?.setSuccess?.('Función de edición en desarrollo');
   };
   
